@@ -50,10 +50,6 @@ func InitIntentionHandler(session *models.RoboSession) *IntentionHandler {
 func (h *IntentionHandler) run() {
 	h.session.Logger.Info("Intention handler goroutine started")
 
-	// Process intentions every 2 seconds
-	ticker := time.NewTicker(2 * time.Second)
-	defer ticker.Stop()
-
 	for h.isActive {
 		select {
 		case intentionResult := <-h.session.IntentionCh:
@@ -65,15 +61,9 @@ func (h *IntentionHandler) run() {
 			}
 			// Process intention result (handled by orchestrator)
 
-		case <-ticker.C:
-			// Check for new intentions based on current transcript
-			if h.session.CurrentTranscript != "" {
-				go h.analyzeIntention(h.session.CurrentTranscript)
-			}
-
 		case <-h.session.CurrentContext.Done():
 			h.session.Logger.Debug("Intention handler context cancelled")
-			// Don't exit, just wait for next tick or SESSION_END
+			// Don't exit, just wait for next message or SESSION_END
 		}
 	}
 
@@ -256,4 +246,14 @@ func (h *IntentionHandler) notifyOrchestrator(result models.IntentionResult) {
 func (h *IntentionHandler) Close() {
 	h.session.Logger.Info("Closing Intention Handler")
 	h.isActive = false
+}
+
+// ProcessTranscript should be called when a complete transcript is ready
+func (h *IntentionHandler) ProcessTranscript(transcript string) {
+	if transcript == "" {
+		return
+	}
+
+	h.session.Logger.Info("Processing transcript for intention analysis", zap.String("transcript", transcript))
+	go h.analyzeIntention(transcript)
 }

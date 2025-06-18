@@ -128,12 +128,14 @@ func handleSessionOrchestrator(session *models.RoboSession, audioHandler *AudioH
 					// Update context for new processing
 					session.UpdateContext()
 
-					// The intention handler will automatically process this in its goroutine
 					// Send the final transcript to the client
 					sendWebSocketMessage(session, "transcript_final", map[string]interface{}{
 						"transcript": session.CurrentTranscript,
 						"timestamp":  time.Now(),
 					})
+
+					// Process the complete transcript for intention analysis
+					intentionHandler.ProcessTranscript(session.CurrentTranscript)
 
 					// Reset transcript buffer
 					session.CurrentTranscript = ""
