@@ -17,7 +17,6 @@ import (
 
 type DeepgramCallback struct {
 	TranscriptionChannel chan string
-	InterruptionChannel  chan string
 	confidenceThreshold  float64
 
 	lang                string
@@ -36,8 +35,7 @@ func (c *DeepgramCallback) defaultConfidenceThreshold() float64 {
 func InitDeepgramClient(
 	lang string,
 	confidenceThreshold string,
-	transcriptionCh,
-	interruptionCh chan string,
+	transcriptionCh chan string,
 ) *DeepgramClient {
 	apiKey := os.Getenv("DEEPGRAM_API_KEY")
 
@@ -76,7 +74,6 @@ func InitDeepgramClient(
 
 	callback := &DeepgramCallback{
 		TranscriptionChannel: transcriptionCh,
-		InterruptionChannel:  interruptionCh,
 		confidenceThreshold:  confidenceThresholdFloat,
 
 		lang:                lang,
@@ -142,7 +139,6 @@ func (c *DeepgramCallback) Message(mr *msginterfaces.MessageResponse) error {
 		return nil
 	}
 
-	c.InterruptionChannel <- transcript
 	if mr.IsFinal {
 		zap.L().Debug("Final word of a sentence received", zap.String("transcript", transcript))
 		c.TranscriptionChannel <- transcript

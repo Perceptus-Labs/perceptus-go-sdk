@@ -153,24 +153,6 @@ func handleSessionOrchestrator(session *models.RoboSession, audioHandler *AudioH
 				}
 			}
 
-		case interruption := <-session.InterruptionCh:
-			if interruption == models.SESSION_END {
-				session.Logger.Info("Session orchestrator received SESSION_END")
-				return
-			}
-
-			session.Logger.Debug("Received interruption", zap.String("interruption", interruption))
-
-			// Handle interruption - cancel current context and reset
-			session.Logger.Info("User interruption detected")
-			session.UpdateContext() // This cancels previous context
-
-			// Send interruption to client
-			sendWebSocketMessage(session, "interruption", map[string]interface{}{
-				"interruption": interruption,
-				"timestamp":    time.Now(),
-			})
-
 		case intentionResult := <-session.IntentionCh:
 			session.Logger.Info("Received intention result",
 				zap.String("description", intentionResult.Description),

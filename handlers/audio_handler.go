@@ -20,7 +20,6 @@ func InitAudioHandler(session *models.RoboSession) (*AudioHandler, error) {
 		"en",  // Default language
 		"0.6", // Default confidence threshold
 		session.TranscriptionCh,
-		session.InterruptionCh,
 	)
 
 	// Connect to Deepgram
