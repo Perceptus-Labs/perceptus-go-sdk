@@ -16,10 +16,118 @@ import (
 	"go.uber.org/zap"
 )
 
+type RoboSession struct {
+	ID                   string
+	CurrentContext       context.Context
+	CancelCurrentContext context.CancelFunc
+	Connection           *websocket.Conn
+	RedisClient          *redis.Client
+	Logger               *zap.Logger
+
+	// Channels for communication between handlers
+	TranscriptionCh chan string
+	InterruptionCh  chan string
+	VideoAnalysisCh chan string
+	IntentionCh     chan models.IntentionResult
+
+	// Session state
+	IsActive     bool
+	StartTime    time.Time
+	LastActivity time.Time
+
+	// Configuration
+	VideoFrequency time.Duration // How often to take pictures
+	AudioFrequency time.Duration // How often to process audio (if needed)
+
+	// Current transcript buffer
+	CurrentTranscript string
+	LastActionTime    time.Time
+}
+
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
 		return true // Allow connections from any origin
 	},
+}
+
+func NewRoboSession(id string, conn *websocket.Conn, redisClient *redis.Client) *RoboSession {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Create a logger with session ID context
+	logger := zap.L().With(zap.String("session_id", id))
+
+	session := &RoboSession{
+		ID:                   id,
+		CurrentContext:       ctx,
+		CancelCurrentContext: cancel,
+		Connection:           conn,
+		RedisClient:          redisClient,
+		Logger:               logger,
+
+		TranscriptionCh: make(chan string, 100),
+		InterruptionCh:  make(chan string, 100),
+		VideoAnalysisCh: make(chan string, 100),
+		IntentionCh:     make(chan models.IntentionResult, 10),
+
+		IsActive:     true,
+		StartTime:    time.Now(),
+		LastActivity: time.Now(),
+
+		VideoFrequency: 10 * time.Second,       // Default: take picture every 10 seconds
+		AudioFrequency: 100 * time.Millisecond, // Default: process audio continuously
+
+		CurrentTranscript: "",
+		LastActionTime:    time.Now(),
+	}
+
+	return session
+}
+
+func (rs *RoboSession) UpdateContext() {
+	rs.CancelCurrentContext()
+	rs.CurrentContext, rs.CancelCurrentContext = context.WithCancel(context.Background())
+	rs.LastActivity = time.Now()
+}
+
+func (rs *RoboSession) Stop() {
+	rs.Logger.Info("Stopping session")
+	rs.IsActive = false
+
+	// Send SESSION_END to all channels to stop all goroutines
+	rs.SendToAllChannels(models.SESSION_END)
+
+	// Cancel current context
+	rs.CancelCurrentContext()
+
+	// Close all channels
+	close(rs.TranscriptionCh)
+	close(rs.InterruptionCh)
+	close(rs.VideoAnalysisCh)
+	close(rs.IntentionCh)
+
+	if rs.Connection != nil {
+		rs.Connection.Close()
+	}
+}
+
+func (rs *RoboSession) SendToAllChannels(message string) {
+	// Send to all channels that accept strings
+	select {
+	case rs.TranscriptionCh <- message:
+	default:
+	}
+	select {
+	case rs.InterruptionCh <- message:
+	default:
+	}
+	select {
+	case rs.VideoAnalysisCh <- message:
+	default:
+	}
+}
+
+func (rs *RoboSession) Close() {
+	rs.Stop()
 }
 
 type SessionConfig struct {
@@ -44,7 +152,7 @@ func HandleRobotSession(w http.ResponseWriter, r *http.Request, redisClient *red
 
 	// Create new robot session
 	sessionID := uuid.New().String()
-	session := models.NewRoboSession(sessionID, conn, redisClient)
+	session := NewRoboSession(sessionID, conn, redisClient)
 	session.Logger.Info("New robot session started")
 
 	// Initialize handlers (they start their own goroutines)
@@ -106,7 +214,49 @@ func HandleRobotSession(w http.ResponseWriter, r *http.Request, redisClient *red
 	session.Stop()
 }
 
-func handleSessionOrchestrator(session *models.RoboSession, audioHandler *AudioHandler, videoHandler *VideoHandler, intentionHandler *IntentionHandler) {
+func (session *RoboSession) listenWebsocketMessages(conn *websocket.Conn, audioHandler *AudioHandler) {
+	// Handle incoming websocket messages
+	for {
+		var msg WebSocketMessage
+		err := conn.ReadJSON(&msg)
+		if err != nil {
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+				session.Logger.Error("WebSocket error", zap.Error(err))
+			}
+			break
+		}
+
+		// Handle different message types
+		switch msg.Type {
+		case "config":
+			handleConfigMessage(session, msg.Data)
+		case "audio_data":
+			handleAudioData(session, audioHandler, msg.Data)
+		case "ping":
+			sendWebSocketMessage(session, "pong", nil)
+		case "stop":
+			session.Logger.Info("Received stop command from client")
+
+			// Send SESSION_END to all channels to stop all goroutines
+			session.SendToAllChannels(models.SESSION_END)
+
+			// Stop the session
+			session.Stop()
+
+			// Send confirmation back to client
+			sendWebSocketMessage(session, "stop_confirmation", map[string]interface{}{
+				"session_id": session.ID,
+				"message":    "Session stopped successfully",
+			})
+
+			return
+		default:
+			session.Logger.Warn("Unknown message type", zap.String("type", msg.Type))
+		}
+	}
+}
+
+func handleSessionOrchestrator(session *RoboSession, audioHandler *AudioHandler, videoHandler *VideoHandler, intentionHandler *IntentionHandler) {
 	session.Logger.Info("Session orchestrator started")
 
 	// Start the main event loop
@@ -194,7 +344,7 @@ func handleSessionOrchestrator(session *models.RoboSession, audioHandler *AudioH
 	intentionHandler.Close()
 }
 
-func handleConfigMessage(session *models.RoboSession, data interface{}) {
+func handleConfigMessage(session *RoboSession, data interface{}) {
 	configData, ok := data.(map[string]interface{})
 	if !ok {
 		session.Logger.Error("Invalid config data format")
@@ -227,7 +377,7 @@ func handleConfigMessage(session *models.RoboSession, data interface{}) {
 	})
 }
 
-func handleAudioData(session *models.RoboSession, audioHandler *AudioHandler, data interface{}) {
+func handleAudioData(session *RoboSession, audioHandler *AudioHandler, data interface{}) {
 	// Handle audio data similar to Twilio media events
 	session.Logger.Debug("Received audio data")
 
@@ -259,7 +409,7 @@ func handleAudioData(session *models.RoboSession, audioHandler *AudioHandler, da
 	}
 }
 
-func sendWebSocketMessage(session *models.RoboSession, msgType string, data interface{}) {
+func sendWebSocketMessage(session *RoboSession, msgType string, data interface{}) {
 	msg := WebSocketMessage{
 		Type:      msgType,
 		Data:      data,
@@ -272,7 +422,7 @@ func sendWebSocketMessage(session *models.RoboSession, msgType string, data inte
 	}
 }
 
-func triggerOrchestrator(session *models.RoboSession, intention models.IntentionResult) {
+func triggerOrchestrator(session *RoboSession, intention models.IntentionResult) {
 	session.Logger.Info("Triggering orchestrator", zap.Any("intention", intention))
 	orchestratorEndpoint := os.Getenv("ORCHESTRATOR_ENDPOINT")
 	apiKey := os.Getenv("ORCHESTRATOR_API_KEY")

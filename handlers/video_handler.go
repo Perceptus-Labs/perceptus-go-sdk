@@ -13,14 +13,14 @@ import (
 )
 
 type VideoHandler struct {
-	session      *models.RoboSession
+	session      *RoboSession
 	camera       *utils.CameraCapture
 	openaiClient *utils.OpenAIClient
 	pineconeIdx  *pinecone.IndexConnection
 	isActive     bool
 }
 
-func InitVideoHandler(session *models.RoboSession) *VideoHandler {
+func InitVideoHandler(session *RoboSession) *VideoHandler {
 	session.Logger.Info("Initializing Video Handler...")
 
 	// Initialize camera

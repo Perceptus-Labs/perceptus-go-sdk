@@ -7,12 +7,12 @@ import (
 )
 
 type AudioHandler struct {
-	session        *models.RoboSession
+	session        *RoboSession
 	deepgramClient *utils.DeepgramClient
 	isActive       bool
 }
 
-func InitAudioHandler(session *models.RoboSession) (*AudioHandler, error) {
+func InitAudioHandler(session *RoboSession) (*AudioHandler, error) {
 	session.Logger.Info("Initializing Audio Handler...")
 
 	// Initialize Deepgram client with default settings

@@ -13,13 +13,13 @@ import (
 )
 
 type IntentionHandler struct {
-	session      *models.RoboSession
+	session      *RoboSession
 	openaiClient *utils.OpenAIClient
 	pineconeIdx  *pinecone.IndexConnection
 	isActive     bool
 }
 
-func InitIntentionHandler(session *models.RoboSession) *IntentionHandler {
+func InitIntentionHandler(session *RoboSession) *IntentionHandler {
 	session.Logger.Info("Initializing Intention Handler...")
 
 	// Initialize OpenAI client
