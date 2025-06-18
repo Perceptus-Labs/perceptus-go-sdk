@@ -6,7 +6,7 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/redis/go-redis/v9"
-	log "github.com/sirupsen/logrus"
+	"go.uber.org/zap"
 )
 
 type RoboSession struct {
@@ -15,7 +15,7 @@ type RoboSession struct {
 	CancelCurrentContext context.CancelFunc
 	Connection           *websocket.Conn
 	RedisClient          *redis.Client
-	Logger               *log.Entry
+	Logger               *zap.Logger
 
 	// Channels for communication between handlers
 	TranscriptionCh chan string
@@ -67,13 +67,16 @@ type VideoAnalysis struct {
 func NewRoboSession(id string, conn *websocket.Conn, redisClient *redis.Client) *RoboSession {
 	ctx, cancel := context.WithCancel(context.Background())
 
+	// Create a logger with session ID context
+	logger := zap.L().With(zap.String("session_id", id))
+
 	session := &RoboSession{
 		ID:                   id,
 		CurrentContext:       ctx,
 		CancelCurrentContext: cancel,
 		Connection:           conn,
 		RedisClient:          redisClient,
-		Logger:               log.WithField("session_id", id),
+		Logger:               logger,
 
 		TranscriptionCh: make(chan string, 100),
 		InterruptionCh:  make(chan string, 100),

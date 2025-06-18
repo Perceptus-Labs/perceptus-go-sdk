@@ -12,6 +12,7 @@ require (
 	github.com/pinecone-io/go-pinecone v1.1.1
 	github.com/redis/go-redis/v9 v9.10.0
 	github.com/sirupsen/logrus v1.9.3
+	go.uber.org/zap v1.27.0
 )
 
 require (
@@ -29,6 +30,7 @@ require (
 	github.com/oapi-codegen/runtime v1.1.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/stretchr/testify v1.8.4 // indirect
+	go.uber.org/multierr v1.10.0 // indirect
 	golang.org/x/net v0.25.0 // indirect
 	golang.org/x/sys v0.31.0 // indirect
 	golang.org/x/text v0.15.0 // indirect

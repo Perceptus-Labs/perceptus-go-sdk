@@ -11,7 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"github.com/redis/go-redis/v9"
-	log "github.com/sirupsen/logrus"
+	"go.uber.org/zap"
 )
 
 var upgrader = websocket.Upgrader{
@@ -35,7 +35,7 @@ func HandleRobotSession(w http.ResponseWriter, r *http.Request, redisClient *red
 	// Upgrade HTTP connection to WebSocket
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.WithError(err).Error("Failed to upgrade to websocket")
+		zap.L().Error("Failed to upgrade to websocket", zap.Error(err))
 		return
 	}
 	defer conn.Close()
@@ -54,7 +54,7 @@ func HandleRobotSession(w http.ResponseWriter, r *http.Request, redisClient *red
 		err := conn.ReadJSON(&msg)
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				session.Logger.WithError(err).Error("WebSocket error")
+				session.Logger.Error("WebSocket error", zap.Error(err))
 			}
 			break
 		}
@@ -68,7 +68,7 @@ func HandleRobotSession(w http.ResponseWriter, r *http.Request, redisClient *red
 		case "ping":
 			sendWebSocketMessage(session, "pong", nil)
 		default:
-			session.Logger.Warn("Unknown message type:", msg.Type)
+			session.Logger.Warn("Unknown message type", zap.String("type", msg.Type))
 		}
 	}
 
@@ -83,7 +83,7 @@ func HandleStartSession(session *models.RoboSession) {
 	// Initialize handlers
 	audioHandler, err := InitAudioHandler(session)
 	if err != nil {
-		session.Logger.WithError(err).Error("Failed to initialize audio handler")
+		session.Logger.Error("Failed to initialize audio handler", zap.Error(err))
 		return
 	}
 
@@ -107,12 +107,12 @@ func HandleStartSession(session *models.RoboSession) {
 			return
 
 		case transcript := <-session.TranscriptionCh:
-			session.Logger.Debug("Received transcript:", transcript)
+			session.Logger.Debug("Received transcript", zap.String("transcript", transcript))
 
 			if transcript == "<END_OF_SPEECH>" {
 				// Process the accumulated transcript for intention
 				if session.CurrentTranscript != "" {
-					session.Logger.Info("Processing transcript for intention:", session.CurrentTranscript)
+					session.Logger.Info("Processing transcript for intention", zap.String("transcript", session.CurrentTranscript))
 					go intentionHandler.ProcessTranscriptForIntention(session.CurrentTranscript)
 
 					// Reset transcript buffer
@@ -124,7 +124,10 @@ func HandleStartSession(session *models.RoboSession) {
 			}
 
 		case intentionResult := <-session.IntentionCh:
-			session.Logger.Info("Received intention result:", intentionResult.Description)
+			session.Logger.Info("Received intention result",
+				zap.String("description", intentionResult.Description),
+				zap.Bool("has_clear_intention", intentionResult.HasClearIntention),
+				zap.Float64("confidence", intentionResult.Confidence))
 
 			if intentionResult.HasClearIntention {
 				session.Logger.Info("Clear intention detected, triggering orchestrator")
@@ -167,7 +170,7 @@ func handleConfigMessage(session *models.RoboSession, data interface{}) {
 		if freqStr, ok := videoFreq.(string); ok {
 			if duration, err := time.ParseDuration(freqStr); err == nil {
 				session.VideoFrequency = duration
-				session.Logger.Info("Updated video frequency:", duration)
+				session.Logger.Info("Updated video frequency", zap.Duration("frequency", duration))
 			}
 		}
 	}
@@ -177,7 +180,7 @@ func handleConfigMessage(session *models.RoboSession, data interface{}) {
 		if freqStr, ok := audioFreq.(string); ok {
 			if duration, err := time.ParseDuration(freqStr); err == nil {
 				session.AudioFrequency = duration
-				session.Logger.Info("Updated audio frequency:", duration)
+				session.Logger.Info("Updated audio frequency", zap.Duration("frequency", duration))
 			}
 		}
 	}
@@ -205,7 +208,7 @@ func sendWebSocketMessage(session *models.RoboSession, msgType string, data inte
 
 	err := session.Connection.WriteJSON(msg)
 	if err != nil {
-		session.Logger.WithError(err).Error("Failed to send websocket message")
+		session.Logger.Error("Failed to send websocket message", zap.Error(err), zap.String("type", msgType))
 	}
 }
 
@@ -228,7 +231,7 @@ func triggerOrchestrator(session *models.RoboSession, intention models.Intention
 
 	payloadBytes, err := json.Marshal(payload)
 	if err != nil {
-		session.Logger.WithError(err).Error("Failed to marshal orchestrator payload")
+		session.Logger.Error("Failed to marshal orchestrator payload", zap.Error(err))
 		return
 	}
 
@@ -237,7 +240,7 @@ func triggerOrchestrator(session *models.RoboSession, intention models.Intention
 	req, err := http.NewRequestWithContext(session.CurrentContext, "POST", orchestratorEndpoint,
 		bytes.NewBuffer(payloadBytes))
 	if err != nil {
-		session.Logger.WithError(err).Error("Failed to create orchestrator request")
+		session.Logger.Error("Failed to create orchestrator request", zap.Error(err))
 		return
 	}
 
@@ -246,7 +249,7 @@ func triggerOrchestrator(session *models.RoboSession, intention models.Intention
 
 	resp, err := client.Do(req)
 	if err != nil {
-		session.Logger.WithError(err).Error("Failed to call orchestrator")
+		session.Logger.Error("Failed to call orchestrator", zap.Error(err))
 		return
 	}
 	defer resp.Body.Close()
@@ -262,7 +265,7 @@ func triggerOrchestrator(session *models.RoboSession, intention models.Intention
 			"timestamp":  time.Now(),
 		})
 	} else {
-		session.Logger.Error("Orchestrator returned error status:", resp.StatusCode)
+		session.Logger.Error("Orchestrator returned error status", zap.Int("status", resp.StatusCode))
 	}
 }
 

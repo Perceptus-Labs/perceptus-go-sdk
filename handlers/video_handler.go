@@ -9,6 +9,7 @@ import (
 	"github.com/Perceptus-Labs/perceptus-go-sdk/models"
 	"github.com/Perceptus-Labs/perceptus-go-sdk/utils"
 	"github.com/pinecone-io/go-pinecone/pinecone"
+	"go.uber.org/zap"
 )
 
 type VideoHandler struct {
@@ -31,7 +32,7 @@ func InitVideoHandler(session *models.RoboSession) *VideoHandler {
 	// Initialize Pinecone connection
 	pineconeIdx, err := utils.GetPineconeIndex(&session.ID)
 	if err != nil {
-		session.Logger.WithError(err).Warn("Failed to initialize Pinecone connection")
+		session.Logger.Warn("Failed to initialize Pinecone connection", zap.Error(err))
 		// Continue without Pinecone - we'll still do video analysis
 	}
 
@@ -48,7 +49,7 @@ func InitVideoHandler(session *models.RoboSession) *VideoHandler {
 }
 
 func (h *VideoHandler) StartPeriodicCapture() {
-	h.session.Logger.Info("Started periodic video capture", "frequency", h.session.VideoFrequency)
+	h.session.Logger.Info("Started periodic video capture", zap.Duration("frequency", h.session.VideoFrequency))
 
 	ticker := time.NewTicker(h.session.VideoFrequency)
 	defer ticker.Stop()
@@ -74,18 +75,18 @@ func (h *VideoHandler) captureAndAnalyze() {
 	// Capture image from camera
 	imageData, err := h.camera.TryCapture()
 	if err != nil {
-		h.session.Logger.WithError(err).Error("Failed to capture image")
+		h.session.Logger.Error("Failed to capture image", zap.Error(err))
 		return
 	}
 
 	// Analyze image with OpenAI GPT-4V
 	description, err := h.openaiClient.GenerateEnvironmentDescription(ctx, imageData)
 	if err != nil {
-		h.session.Logger.WithError(err).Error("Failed to analyze image")
+		h.session.Logger.Error("Failed to analyze image", zap.Error(err))
 		return
 	}
 
-	h.session.Logger.Debug("Generated environment description:", description)
+	h.session.Logger.Debug("Generated environment description", zap.String("description", description))
 
 	// Create environment context
 	envContext := models.EnvironmentContext{
@@ -212,7 +213,7 @@ func (h *VideoHandler) storeEnvironmentContext(envContext models.EnvironmentCont
 		// Create embedding
 		embedding, err := utils.VectorizePrompt("text-embedding-ada-002", ctx, text)
 		if err != nil {
-			h.session.Logger.WithError(err).Error("Failed to create embedding for:", text)
+			h.session.Logger.Error("Failed to create embedding", zap.Error(err), zap.String("text", text))
 			continue
 		}
 
@@ -237,7 +238,7 @@ func (h *VideoHandler) storeEnvironmentContext(envContext models.EnvironmentCont
 		// Use the utility function to upsert to Pinecone
 		err = utils.UpsertToPinecone(ctx, h.pineconeIdx, vectorID, embedding, metadata)
 		if err != nil {
-			h.session.Logger.WithError(err).Error("Failed to upsert to Pinecone:", vectorID)
+			h.session.Logger.Error("Failed to upsert to Pinecone", zap.Error(err), zap.String("vector_id", vectorID))
 		}
 	}
 

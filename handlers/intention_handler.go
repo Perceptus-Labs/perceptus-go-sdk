@@ -10,6 +10,7 @@ import (
 	"github.com/Perceptus-Labs/perceptus-go-sdk/models"
 	"github.com/Perceptus-Labs/perceptus-go-sdk/utils"
 	"github.com/pinecone-io/go-pinecone/pinecone"
+	"go.uber.org/zap"
 )
 
 type IntentionHandler struct {
@@ -38,7 +39,7 @@ func InitIntentionHandler(session *models.RoboSession) *IntentionHandler {
 	// Initialize Pinecone connection
 	pineconeIdx, err := utils.GetPineconeIndex(&session.ID)
 	if err != nil {
-		session.Logger.WithError(err).Warn("Failed to initialize Pinecone connection")
+		session.Logger.Warn("Failed to initialize Pinecone connection", zap.Error(err))
 	}
 
 	intentionHandler := &IntentionHandler{
@@ -80,14 +81,14 @@ func (h *IntentionHandler) ProcessTranscriptForIntention(transcript string) {
 	ctx, cancel := context.WithTimeout(h.session.CurrentContext, 45*time.Second)
 	defer cancel()
 
-	h.session.Logger.Info("Processing transcript for intention analysis")
+	h.session.Logger.Info("Processing transcript for intention analysis", zap.String("transcript", transcript))
 
 	// Step 1: Get current environment context from video analysis
 	var videoContext string
 	if h.videoHandler != nil {
 		contextDesc, err := h.videoHandler.CaptureImageForContext(transcript)
 		if err != nil {
-			h.session.Logger.WithError(err).Warn("Failed to get video context, continuing without it")
+			h.session.Logger.Warn("Failed to get video context, continuing without it", zap.Error(err))
 		} else {
 			videoContext = contextDesc
 		}
@@ -98,7 +99,7 @@ func (h *IntentionHandler) ProcessTranscriptForIntention(transcript string) {
 	if h.pineconeIdx != nil {
 		relevantContext, err := h.getRelevantEnvironmentContext(ctx, transcript)
 		if err != nil {
-			h.session.Logger.WithError(err).Warn("Failed to get Pinecone context")
+			h.session.Logger.Warn("Failed to get Pinecone context", zap.Error(err))
 		} else {
 			pineconeContext = relevantContext
 		}
@@ -113,7 +114,7 @@ func (h *IntentionHandler) ProcessTranscriptForIntention(transcript string) {
 	// Step 4: Analyze transcript for intention using OpenAI
 	intentionJSON, err := h.openaiClient.AnalyzeTranscriptForIntention(ctx, transcript, allContext)
 	if err != nil {
-		h.session.Logger.WithError(err).Error("Failed to analyze transcript for intention")
+		h.session.Logger.Error("Failed to analyze transcript for intention", zap.Error(err))
 		return
 	}
 
@@ -121,7 +122,7 @@ func (h *IntentionHandler) ProcessTranscriptForIntention(transcript string) {
 	var analysisResult IntentionAnalysisResult
 	err = json.Unmarshal([]byte(intentionJSON), &analysisResult)
 	if err != nil {
-		h.session.Logger.WithError(err).Error("Failed to parse intention analysis JSON")
+		h.session.Logger.Error("Failed to parse intention analysis JSON", zap.Error(err))
 		return
 	}
 
@@ -137,9 +138,9 @@ func (h *IntentionHandler) ProcessTranscriptForIntention(transcript string) {
 	}
 
 	h.session.Logger.Info("Intention analysis completed",
-		"has_intention", intentionResult.HasClearIntention,
-		"confidence", intentionResult.Confidence,
-		"description", intentionResult.Description)
+		zap.Bool("has_intention", intentionResult.HasClearIntention),
+		zap.Float64("confidence", intentionResult.Confidence),
+		zap.String("description", intentionResult.Description))
 
 	// Step 7: Send result to intention channel
 	select {
@@ -163,7 +164,7 @@ func (h *IntentionHandler) getRelevantEnvironmentContext(ctx context.Context, tr
 		return nil, fmt.Errorf("failed to fetch from Pinecone: %w", err)
 	}
 
-	h.session.Logger.Debug("Retrieved environment context from Pinecone", "count", len(relevantContext))
+	h.session.Logger.Debug("Retrieved environment context from Pinecone", zap.Int("count", len(relevantContext)))
 	return relevantContext, nil
 }
 

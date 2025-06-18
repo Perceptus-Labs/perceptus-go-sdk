@@ -5,6 +5,7 @@ import (
 
 	"github.com/Perceptus-Labs/perceptus-go-sdk/models"
 	"github.com/Perceptus-Labs/perceptus-go-sdk/utils"
+	"go.uber.org/zap"
 )
 
 type AudioHandler struct {
@@ -71,7 +72,7 @@ func (h *AudioHandler) ProcessAudioData(audioData []byte) error {
 	// Send audio data to Deepgram
 	err := h.deepgramClient.Send(audioData)
 	if err != nil {
-		h.session.Logger.WithError(err).Error("Failed to send audio data to Deepgram")
+		h.session.Logger.Error("Failed to send audio data to Deepgram", zap.Error(err))
 		return err
 	}
 

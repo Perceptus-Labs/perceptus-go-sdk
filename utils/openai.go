@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	log "github.com/sirupsen/logrus"
+	"go.uber.org/zap"
 )
 
 type OpenAIClient struct {
@@ -44,7 +44,7 @@ type ImageContent struct {
 func NewOpenAIClient() *OpenAIClient {
 	apiKey := os.Getenv("OPENAI_API_KEY")
 	if apiKey == "" {
-		log.Fatal("OPENAI_API_KEY environment variable not set")
+		zap.L().Fatal("OPENAI_API_KEY environment variable not set")
 	}
 
 	return &OpenAIClient{
