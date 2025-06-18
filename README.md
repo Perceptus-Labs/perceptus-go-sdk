@@ -26,22 +26,9 @@ go get github.com/haohanwang/perceptus-go-sdk
 ## Project Structure
 
 ```
-.
-├── cmd/
-│   └── main.go           # Main application entry point
-├── internal/
-│   ├── audio/           # Audio processing components
-│   ├── video/           # Video processing components
-│   ├── context/         # Context management system
-│   └── websocket/       # WebSocket handlers
-├── pkg/                 # Public API packages
-└── config/             # Configuration files
+TODO: Add project structure
 ```
 
 ## Usage
 
 [Documentation coming soon]
-
-## License
-
-MIT 
