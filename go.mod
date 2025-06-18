@@ -11,7 +11,6 @@ require (
 	github.com/lpernett/godotenv v0.0.0-20230527005122-0de1d4c5ef5e
 	github.com/pinecone-io/go-pinecone v1.1.1
 	github.com/redis/go-redis/v9 v9.10.0
-	github.com/sirupsen/logrus v1.9.3
 	go.uber.org/zap v1.27.0
 )
 
