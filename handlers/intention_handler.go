@@ -131,7 +131,7 @@ func (h *IntentionHandler) analyzeIntention(transcript string) {
 	}
 
 	// Send result via websocket
-	sendWebSocketMessage(h.session, "intention_analysis", result)
+	h.session.sendWebSocketMessage("intention_analysis", result)
 }
 
 func (h *IntentionHandler) getRelevantEnvironmentContext(ctx context.Context, transcript string) ([]string, error) {

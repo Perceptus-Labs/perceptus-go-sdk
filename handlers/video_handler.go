@@ -144,7 +144,7 @@ func (h *VideoHandler) captureAndAnalyze() {
 	}
 
 	// Send analysis result via websocket
-	sendWebSocketMessage(h.session, "video_analysis", analysis)
+	h.session.sendWebSocketMessage("video_analysis", analysis)
 }
 
 func (h *VideoHandler) CaptureImageForContext(transcript string) (string, error) {

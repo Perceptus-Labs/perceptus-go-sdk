@@ -167,47 +167,10 @@ func HandleRobotSession(w http.ResponseWriter, r *http.Request, redisClient *red
 	intentionHandler := InitIntentionHandler(session)
 
 	// Start the main session orchestrator goroutine
-	go handleSessionOrchestrator(session, audioHandler, videoHandler, intentionHandler)
+	go session.handleSessionOrchestrator(audioHandler, videoHandler, intentionHandler)
 
 	// Handle incoming websocket messages
-	for {
-		var msg WebSocketMessage
-		err := conn.ReadJSON(&msg)
-		if err != nil {
-			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				session.Logger.Error("WebSocket error", zap.Error(err))
-			}
-			break
-		}
-
-		// Handle different message types
-		switch msg.Type {
-		case "config":
-			handleConfigMessage(session, msg.Data)
-		case "audio_data":
-			handleAudioData(session, audioHandler, msg.Data)
-		case "ping":
-			sendWebSocketMessage(session, "pong", nil)
-		case "stop":
-			session.Logger.Info("Received stop command from client")
-
-			// Send SESSION_END to all channels to stop all goroutines
-			session.SendToAllChannels(models.SESSION_END)
-
-			// Stop the session
-			session.Stop()
-
-			// Send confirmation back to client
-			sendWebSocketMessage(session, "stop_confirmation", map[string]interface{}{
-				"session_id": session.ID,
-				"message":    "Session stopped successfully",
-			})
-
-			return
-		default:
-			session.Logger.Warn("Unknown message type", zap.String("type", msg.Type))
-		}
-	}
+	go session.listenWebsocketMessages(conn, audioHandler)
 
 	// Clean up session
 	session.Logger.Info("Robot session ended")
@@ -229,11 +192,11 @@ func (session *RoboSession) listenWebsocketMessages(conn *websocket.Conn, audioH
 		// Handle different message types
 		switch msg.Type {
 		case "config":
-			handleConfigMessage(session, msg.Data)
+			session.handleConfigMessage(msg.Data)
 		case "audio_data":
-			handleAudioData(session, audioHandler, msg.Data)
+			session.handleAudioData(audioHandler, msg.Data)
 		case "ping":
-			sendWebSocketMessage(session, "pong", nil)
+			session.sendWebSocketMessage("pong", nil)
 		case "stop":
 			session.Logger.Info("Received stop command from client")
 
@@ -244,7 +207,7 @@ func (session *RoboSession) listenWebsocketMessages(conn *websocket.Conn, audioH
 			session.Stop()
 
 			// Send confirmation back to client
-			sendWebSocketMessage(session, "stop_confirmation", map[string]interface{}{
+			session.sendWebSocketMessage("stop_confirmation", map[string]interface{}{
 				"session_id": session.ID,
 				"message":    "Session stopped successfully",
 			})
@@ -256,7 +219,7 @@ func (session *RoboSession) listenWebsocketMessages(conn *websocket.Conn, audioH
 	}
 }
 
-func handleSessionOrchestrator(session *RoboSession, audioHandler *AudioHandler, videoHandler *VideoHandler, intentionHandler *IntentionHandler) {
+func (session *RoboSession) handleSessionOrchestrator(audioHandler *AudioHandler, videoHandler *VideoHandler, intentionHandler *IntentionHandler) {
 	session.Logger.Info("Session orchestrator started")
 
 	// Start the main event loop
@@ -279,7 +242,7 @@ func handleSessionOrchestrator(session *RoboSession, audioHandler *AudioHandler,
 					session.UpdateContext()
 
 					// Send the final transcript to the client
-					sendWebSocketMessage(session, "transcript_final", map[string]interface{}{
+					session.sendWebSocketMessage("transcript_final", map[string]interface{}{
 						"transcript": session.CurrentTranscript,
 						"timestamp":  time.Now(),
 					})
@@ -296,7 +259,7 @@ func handleSessionOrchestrator(session *RoboSession, audioHandler *AudioHandler,
 					session.CurrentTranscript += transcript + " "
 
 					// Send interim transcript to client
-					sendWebSocketMessage(session, "transcript_interim", map[string]interface{}{
+					session.sendWebSocketMessage("transcript_interim", map[string]interface{}{
 						"transcript": strings.TrimSpace(session.CurrentTranscript),
 						"timestamp":  time.Now(),
 					})
@@ -315,7 +278,7 @@ func handleSessionOrchestrator(session *RoboSession, audioHandler *AudioHandler,
 			}
 
 			// Send intention result to client
-			sendWebSocketMessage(session, "intention_result", intentionResult)
+			session.sendWebSocketMessage("intention_result", intentionResult)
 
 		case videoAnalysis := <-session.VideoAnalysisCh:
 			if videoAnalysis == models.SESSION_END {
@@ -325,12 +288,12 @@ func handleSessionOrchestrator(session *RoboSession, audioHandler *AudioHandler,
 
 			session.Logger.Debug("Received video analysis")
 			// Store environment context and send to client
-			sendWebSocketMessage(session, "video_analysis", videoAnalysis)
+			session.sendWebSocketMessage("video_analysis", videoAnalysis)
 
 		case <-time.After(30 * time.Second):
 			// Periodic heartbeat
 			session.Logger.Debug("Session heartbeat")
-			sendWebSocketMessage(session, "heartbeat", map[string]interface{}{
+			session.sendWebSocketMessage("heartbeat", map[string]interface{}{
 				"session_id": session.ID,
 				"uptime":     time.Since(session.StartTime).String(),
 			})
@@ -344,7 +307,7 @@ func handleSessionOrchestrator(session *RoboSession, audioHandler *AudioHandler,
 	intentionHandler.Close()
 }
 
-func handleConfigMessage(session *RoboSession, data interface{}) {
+func (session *RoboSession) handleConfigMessage(data interface{}) {
 	configData, ok := data.(map[string]interface{})
 	if !ok {
 		session.Logger.Error("Invalid config data format")
@@ -371,13 +334,13 @@ func handleConfigMessage(session *RoboSession, data interface{}) {
 		}
 	}
 
-	sendWebSocketMessage(session, "config_updated", map[string]interface{}{
+	session.sendWebSocketMessage("config_updated", map[string]interface{}{
 		"video_frequency": session.VideoFrequency.String(),
 		"audio_frequency": session.AudioFrequency.String(),
 	})
 }
 
-func handleAudioData(session *RoboSession, audioHandler *AudioHandler, data interface{}) {
+func (session *RoboSession) handleAudioData(audioHandler *AudioHandler, data interface{}) {
 	// Handle audio data similar to Twilio media events
 	session.Logger.Debug("Received audio data")
 
@@ -409,7 +372,7 @@ func handleAudioData(session *RoboSession, audioHandler *AudioHandler, data inte
 	}
 }
 
-func sendWebSocketMessage(session *RoboSession, msgType string, data interface{}) {
+func (session *RoboSession) sendWebSocketMessage(msgType string, data interface{}) {
 	msg := WebSocketMessage{
 		Type:      msgType,
 		Data:      data,
@@ -474,7 +437,7 @@ func triggerOrchestrator(session *RoboSession, intention models.IntentionResult)
 		session.LastActionTime = time.Now()
 
 		// Notify client of successful orchestrator trigger
-		sendWebSocketMessage(session, "orchestrator_triggered", map[string]interface{}{
+		session.sendWebSocketMessage("orchestrator_triggered", map[string]interface{}{
 			"session_id": session.ID,
 			"intention":  intention.Description,
 			"timestamp":  time.Now(),
