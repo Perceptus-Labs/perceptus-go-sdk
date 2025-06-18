@@ -2,9 +2,8 @@ package handlers
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"sync"
+	"strings"
 	"time"
 
 	"github.com/Perceptus-Labs/perceptus-go-sdk/models"
@@ -14,20 +13,10 @@ import (
 )
 
 type IntentionHandler struct {
-	session         *models.RoboSession
-	openaiClient    *utils.OpenAIClient
-	pineconeIdx     *pinecone.IndexConnection
-	videoHandler    *VideoHandler
-	isActive        bool
-	processingMutex sync.Mutex
-}
-
-type IntentionAnalysisResult struct {
-	HasClearIntention bool    `json:"has_clear_intention"`
-	IntentionType     string  `json:"intention_type"`
-	Description       string  `json:"description"`
-	Confidence        float64 `json:"confidence"`
-	Reasoning         string  `json:"reasoning"`
+	session      *models.RoboSession
+	openaiClient *utils.OpenAIClient
+	pineconeIdx  *pinecone.IndexConnection
+	isActive     bool
 }
 
 func InitIntentionHandler(session *models.RoboSession) *IntentionHandler {
@@ -40,6 +29,7 @@ func InitIntentionHandler(session *models.RoboSession) *IntentionHandler {
 	pineconeIdx, err := utils.GetPineconeIndex(&session.ID)
 	if err != nil {
 		session.Logger.Warn("Failed to initialize Pinecone connection", zap.Error(err))
+		// Continue without Pinecone - we'll still do intention analysis
 	}
 
 	intentionHandler := &IntentionHandler{
@@ -50,122 +40,217 @@ func InitIntentionHandler(session *models.RoboSession) *IntentionHandler {
 	}
 
 	session.Logger.Info("Intention Handler initialized")
+
+	// Start the continuous intention processing goroutine
+	go intentionHandler.run()
+
 	return intentionHandler
 }
 
-func (h *IntentionHandler) SetVideoHandler(videoHandler *VideoHandler) {
-	h.videoHandler = videoHandler
-}
+func (h *IntentionHandler) run() {
+	h.session.Logger.Info("Intention handler goroutine started")
 
-func (h *IntentionHandler) StartIntentionProcessor() {
-	h.session.Logger.Info("Started intention processor")
+	// Process intentions every 2 seconds
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
 
-	// The intention processor will be triggered by ProcessTranscriptForIntention
-	// This method just keeps the handler alive
 	for h.isActive {
 		select {
+		case intentionResult := <-h.session.IntentionCh:
+			if intentionResult.HasClearIntention {
+				h.session.Logger.Info("Intention detected",
+					zap.String("type", intentionResult.IntentionType),
+					zap.String("description", intentionResult.Description),
+					zap.Float64("confidence", intentionResult.Confidence))
+			}
+			// Process intention result (handled by orchestrator)
+
+		case <-ticker.C:
+			// Check for new intentions based on current transcript
+			if h.session.CurrentTranscript != "" {
+				go h.analyzeIntention(h.session.CurrentTranscript)
+			}
+
 		case <-h.session.CurrentContext.Done():
-			h.session.Logger.Info("Intention processor stopped - context cancelled")
-			return
-		case <-time.After(30 * time.Second):
-			// Periodic heartbeat
-			h.session.Logger.Debug("Intention processor heartbeat")
+			h.session.Logger.Debug("Intention handler context cancelled")
+			// Don't exit, just wait for next tick or SESSION_END
 		}
 	}
+
+	h.session.Logger.Info("Intention handler goroutine stopped")
 }
 
-func (h *IntentionHandler) ProcessTranscriptForIntention(transcript string) {
-	h.processingMutex.Lock()
-	defer h.processingMutex.Unlock()
-
-	ctx, cancel := context.WithTimeout(h.session.CurrentContext, 45*time.Second)
+func (h *IntentionHandler) analyzeIntention(transcript string) {
+	// Create a new context with timeout for this specific operation
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	h.session.Logger.Info("Processing transcript for intention analysis", zap.String("transcript", transcript))
+	h.session.Logger.Debug("Analyzing intention from transcript", zap.String("transcript", transcript))
 
-	// Step 1: Get current environment context from video analysis
-	var videoContext string
-	if h.videoHandler != nil {
-		contextDesc, err := h.videoHandler.CaptureImageForContext(transcript)
-		if err != nil {
-			h.session.Logger.Warn("Failed to get video context, continuing without it", zap.Error(err))
-		} else {
-			videoContext = contextDesc
-		}
-	}
-
-	// Step 2: Retrieve relevant environment context from Pinecone
-	var pineconeContext []string
+	// Get relevant environment context from Pinecone
+	var environmentContext []string
 	if h.pineconeIdx != nil {
-		relevantContext, err := h.getRelevantEnvironmentContext(ctx, transcript)
+		context, err := h.getRelevantEnvironmentContext(ctx, transcript)
 		if err != nil {
-			h.session.Logger.Warn("Failed to get Pinecone context", zap.Error(err))
+			h.session.Logger.Error("Failed to get environment context", zap.Error(err))
 		} else {
-			pineconeContext = relevantContext
+			environmentContext = context
 		}
 	}
 
-	// Step 3: Combine all environment context
-	allContext := pineconeContext
-	if videoContext != "" {
-		allContext = append(allContext, fmt.Sprintf("Current visual context: %s", videoContext))
+	// Check if context was cancelled before proceeding with expensive API call
+	select {
+	case <-ctx.Done():
+		h.session.Logger.Debug("Context cancelled before intention analysis")
+		return
+	default:
 	}
 
-	// Step 4: Analyze transcript for intention using OpenAI
-	intentionJSON, err := h.openaiClient.AnalyzeTranscriptForIntention(ctx, transcript, allContext)
+	// Analyze intention with OpenAI
+	intention, err := h.openaiClient.AnalyzeTranscriptForIntention(ctx, transcript, environmentContext)
 	if err != nil {
-		h.session.Logger.Error("Failed to analyze transcript for intention", zap.Error(err))
+		h.session.Logger.Error("Failed to analyze intention", zap.Error(err))
 		return
 	}
 
-	// Step 5: Parse the intention analysis result
-	var analysisResult IntentionAnalysisResult
-	err = json.Unmarshal([]byte(intentionJSON), &analysisResult)
-	if err != nil {
-		h.session.Logger.Error("Failed to parse intention analysis JSON", zap.Error(err))
-		return
-	}
+	// Parse the intention result
+	hasIntention, intentionType, description, confidence := h.parseIntentionResponse(intention)
 
-	// Step 6: Create intention result
-	intentionResult := models.IntentionResult{
-		HasClearIntention:  analysisResult.HasClearIntention,
-		IntentionType:      analysisResult.IntentionType,
-		Description:        analysisResult.Description,
-		Confidence:         analysisResult.Confidence,
-		EnvironmentContext: allContext,
-		TranscriptAnalysis: analysisResult.Reasoning,
+	// Create intention result
+	result := models.IntentionResult{
+		HasClearIntention:  hasIntention,
+		IntentionType:      intentionType,
+		Description:        description,
+		Confidence:         confidence,
+		EnvironmentContext: environmentContext,
+		TranscriptAnalysis: intention,
 		Timestamp:          time.Now(),
 	}
 
-	h.session.Logger.Info("Intention analysis completed",
-		zap.Bool("has_intention", intentionResult.HasClearIntention),
-		zap.Float64("confidence", intentionResult.Confidence),
-		zap.String("description", intentionResult.Description))
-
-	// Step 7: Send result to intention channel
+	// Send to intention channel
 	select {
-	case h.session.IntentionCh <- intentionResult:
+	case h.session.IntentionCh <- result:
 		h.session.Logger.Debug("Sent intention result to channel")
 	default:
 		h.session.Logger.Warn("Intention channel full, dropping result")
 	}
+
+	// If clear intention detected, make API call to orchestrator
+	if hasIntention && confidence > 0.7 {
+		go h.notifyOrchestrator(result)
+	}
+
+	// Send result via websocket
+	sendWebSocketMessage(h.session, "intention_analysis", result)
 }
 
 func (h *IntentionHandler) getRelevantEnvironmentContext(ctx context.Context, transcript string) ([]string, error) {
 	if h.pineconeIdx == nil {
-		return nil, fmt.Errorf("pinecone index not available")
+		return []string{}, nil
 	}
 
-	h.session.Logger.Debug("Retrieving relevant environment context from Pinecone")
-
-	// Get relevant context from Pinecone using the transcript
-	relevantContext, err := utils.FetchResponseFromPinecone(ctx, h.pineconeIdx, transcript)
+	// Create embedding for the transcript
+	embedding, err := utils.VectorizePrompt("text-embedding-ada-002", ctx, transcript)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch from Pinecone: %w", err)
+		return nil, fmt.Errorf("failed to create embedding: %w", err)
 	}
 
-	h.session.Logger.Debug("Retrieved environment context from Pinecone", zap.Int("count", len(relevantContext)))
-	return relevantContext, nil
+	// Query Pinecone for similar environment contexts
+	queryRequest := &pinecone.QueryByVectorValuesRequest{
+		Vector:          embedding,
+		TopK:            uint32(5),
+		IncludeValues:   false,
+		IncludeMetadata: true,
+	}
+
+	queryResponse, err := h.pineconeIdx.QueryByVectorValues(ctx, queryRequest)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query Pinecone: %w", err)
+	}
+
+	var contexts []string
+	for _, match := range queryResponse.Matches {
+		if match.Vector != nil && match.Vector.Metadata != nil {
+			if value, ok := match.Vector.Metadata.Fields["text"]; ok {
+				text := value.GetStringValue()
+				if text != "" {
+					contexts = append(contexts, text)
+				}
+			}
+		}
+	}
+
+	return contexts, nil
+}
+
+func (h *IntentionHandler) parseIntentionResponse(response string) (bool, string, string, float64) {
+	// Simple parsing of OpenAI response
+	// This could be made more sophisticated with structured output
+
+	response = strings.ToLower(response)
+
+	// Check for clear intention indicators
+	clearIntentionKeywords := []string{
+		"clear intention", "definite intention", "specific request", "clear request",
+		"wants to", "needs to", "asks for", "requests", "commands",
+	}
+
+	hasIntention := false
+	for _, keyword := range clearIntentionKeywords {
+		if strings.Contains(response, keyword) {
+			hasIntention = true
+			break
+		}
+	}
+
+	// Extract intention type
+	intentionType := "general"
+	if strings.Contains(response, "move") || strings.Contains(response, "go") {
+		intentionType = "movement"
+	} else if strings.Contains(response, "get") || strings.Contains(response, "fetch") {
+		intentionType = "retrieval"
+	} else if strings.Contains(response, "turn on") || strings.Contains(response, "turn off") {
+		intentionType = "control"
+	} else if strings.Contains(response, "help") || strings.Contains(response, "assist") {
+		intentionType = "assistance"
+	}
+
+	// Simple confidence calculation based on response clarity
+	confidence := 0.5 // Default
+	if hasIntention {
+		confidence = 0.8
+		if strings.Contains(response, "very clear") || strings.Contains(response, "definite") {
+			confidence = 0.9
+		}
+	}
+
+	return hasIntention, intentionType, response, confidence
+}
+
+func (h *IntentionHandler) notifyOrchestrator(result models.IntentionResult) {
+	h.session.Logger.Info("Notifying orchestrator of detected intention",
+		zap.String("type", result.IntentionType),
+		zap.Float64("confidence", result.Confidence))
+
+	// Prepare payload for orchestrator
+	payload := map[string]interface{}{
+		"session_id":          h.session.ID,
+		"intention_type":      result.IntentionType,
+		"description":         result.Description,
+		"confidence":          result.Confidence,
+		"transcript":          h.session.CurrentTranscript,
+		"environment_context": result.EnvironmentContext,
+		"timestamp":           result.Timestamp.Unix(),
+	}
+
+	// Make API call to orchestrator
+	// This would be implemented based on your orchestrator's API
+	// For now, we'll just log it
+	h.session.Logger.Info("Orchestrator notification payload", zap.Any("payload", payload))
+
+	// TODO: Implement actual API call to orchestrator
+	// Example:
+	// resp, err := http.Post("http://orchestrator/api/intention", "application/json", bytes.NewBuffer(jsonData))
 }
 
 func (h *IntentionHandler) Close() {

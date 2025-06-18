@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"os"
@@ -45,8 +46,19 @@ func HandleRobotSession(w http.ResponseWriter, r *http.Request, redisClient *red
 	session := models.NewRoboSession(sessionID, conn, redisClient)
 	session.Logger.Info("New robot session started")
 
-	// Start the session orchestrator
-	go HandleStartSession(session)
+	// Initialize handlers (they start their own goroutines)
+	audioHandler, err := InitAudioHandler(session)
+	if err != nil {
+		session.Logger.Error("Failed to initialize audio handler", zap.Error(err))
+		session.Stop()
+		return
+	}
+
+	videoHandler := InitVideoHandler(session)
+	intentionHandler := InitIntentionHandler(session)
+
+	// Start the main session orchestrator goroutine
+	go handleSessionOrchestrator(session, audioHandler, videoHandler, intentionHandler)
 
 	// Handle incoming websocket messages
 	for {
@@ -67,6 +79,22 @@ func HandleRobotSession(w http.ResponseWriter, r *http.Request, redisClient *red
 			handleAudioData(session, msg.Data)
 		case "ping":
 			sendWebSocketMessage(session, "pong", nil)
+		case "stop":
+			session.Logger.Info("Received stop command from client")
+
+			// Send SESSION_END to all channels to stop all goroutines
+			session.SendToAllChannels(models.SESSION_END)
+
+			// Stop the session
+			session.Stop()
+
+			// Send confirmation back to client
+			sendWebSocketMessage(session, "stop_confirmation", map[string]interface{}{
+				"session_id": session.ID,
+				"message":    "Session stopped successfully",
+			})
+
+			return
 		default:
 			session.Logger.Warn("Unknown message type", zap.String("type", msg.Type))
 		}
@@ -74,46 +102,28 @@ func HandleRobotSession(w http.ResponseWriter, r *http.Request, redisClient *red
 
 	// Clean up session
 	session.Logger.Info("Robot session ended")
-	session.Close()
+	session.Stop()
 }
 
-func HandleStartSession(session *models.RoboSession) {
-	session.Logger.Info("Starting robot session orchestrator")
-
-	// Initialize handlers
-	audioHandler, err := InitAudioHandler(session)
-	if err != nil {
-		session.Logger.Error("Failed to initialize audio handler", zap.Error(err))
-		return
-	}
-
-	videoHandler := InitVideoHandler(session)
-	intentionHandler := InitIntentionHandler(session)
-
-	// Link video handler to intention handler
-	intentionHandler.SetVideoHandler(videoHandler)
-
-	// Start the periodic video capture
-	go videoHandler.StartPeriodicCapture()
-
-	// Start the intention processor
-	go intentionHandler.StartIntentionProcessor()
+func handleSessionOrchestrator(session *models.RoboSession, audioHandler *AudioHandler, videoHandler *VideoHandler, intentionHandler *IntentionHandler) {
+	session.Logger.Info("Session orchestrator started")
 
 	// Start the main event loop
 	for session.IsActive {
 		select {
-		case <-session.CurrentContext.Done():
-			session.Logger.Info("Session context cancelled")
-			return
-
 		case transcript := <-session.TranscriptionCh:
+			if transcript == models.SESSION_END {
+				session.Logger.Info("Session orchestrator received SESSION_END")
+				return
+			}
+
 			session.Logger.Debug("Received transcript", zap.String("transcript", transcript))
 
 			if transcript == "<END_OF_SPEECH>" {
 				// Process the accumulated transcript for intention
 				if session.CurrentTranscript != "" {
 					session.Logger.Info("Processing transcript for intention", zap.String("transcript", session.CurrentTranscript))
-					go intentionHandler.ProcessTranscriptForIntention(session.CurrentTranscript)
+					// The intention handler will automatically process this in its goroutine
 
 					// Reset transcript buffer
 					session.CurrentTranscript = ""
@@ -138,6 +148,11 @@ func HandleStartSession(session *models.RoboSession) {
 			sendWebSocketMessage(session, "intention_result", intentionResult)
 
 		case videoAnalysis := <-session.VideoAnalysisCh:
+			if videoAnalysis == models.SESSION_END {
+				session.Logger.Info("Session orchestrator received SESSION_END")
+				return
+			}
+
 			session.Logger.Debug("Received video analysis")
 			// Store environment context and send to client
 			sendWebSocketMessage(session, "video_analysis", videoAnalysis)
@@ -152,7 +167,8 @@ func HandleStartSession(session *models.RoboSession) {
 		}
 	}
 
-	// Cleanup
+	// Cleanup handlers
+	session.Logger.Info("Cleaning up handlers")
 	audioHandler.Close()
 	videoHandler.Close()
 	intentionHandler.Close()
@@ -221,6 +237,10 @@ func triggerOrchestrator(session *models.RoboSession, intention models.Intention
 		return
 	}
 
+	// Create a new context with timeout for this specific operation
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
 	// Prepare the payload
 	payload := map[string]interface{}{
 		"session_id":          session.ID,
@@ -237,7 +257,7 @@ func triggerOrchestrator(session *models.RoboSession, intention models.Intention
 
 	// Make the API call
 	client := &http.Client{Timeout: 10 * time.Second}
-	req, err := http.NewRequestWithContext(session.CurrentContext, "POST", orchestratorEndpoint,
+	req, err := http.NewRequestWithContext(ctx, "POST", orchestratorEndpoint,
 		bytes.NewBuffer(payloadBytes))
 	if err != nil {
 		session.Logger.Error("Failed to create orchestrator request", zap.Error(err))

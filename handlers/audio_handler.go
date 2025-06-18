@@ -36,32 +36,46 @@ func InitAudioHandler(session *models.RoboSession) (*AudioHandler, error) {
 
 	session.Logger.Info("Audio Handler initialized and connected to Deepgram")
 
-	// Start processing audio
-	go audioHandler.startAudioProcessing()
+	// Start the continuous audio processing goroutine
+	go audioHandler.run()
 
 	return audioHandler, nil
 }
 
-func (h *AudioHandler) startAudioProcessing() {
-	h.session.Logger.Info("Started audio processing")
+func (h *AudioHandler) run() {
+	h.session.Logger.Info("Audio handler goroutine started")
 
-	// This is where we would handle incoming audio data
-	// For now, we'll just log that audio processing is active
 	ticker := time.NewTicker(h.session.AudioFrequency)
 	defer ticker.Stop()
 
 	for h.isActive {
 		select {
+		case transcript := <-h.session.TranscriptionCh:
+			if transcript == models.SESSION_END {
+				h.session.Logger.Info("Audio handler received SESSION_END")
+				return
+			}
+			// Process transcript (handled by orchestrator)
+
+		case interruption := <-h.session.InterruptionCh:
+			if interruption == models.SESSION_END {
+				h.session.Logger.Info("Audio handler received SESSION_END")
+				return
+			}
+			// Process interruption (handled by orchestrator)
+
 		case <-ticker.C:
 			// Audio processing tick - this is where real audio processing would happen
 			// For now, we just maintain the connection
 			h.session.Logger.Debug("Audio processing tick")
 
 		case <-h.session.CurrentContext.Done():
-			h.session.Logger.Info("Audio processing stopped - context cancelled")
-			return
+			h.session.Logger.Debug("Audio handler context cancelled")
+			// Don't exit, just wait for next tick or SESSION_END
 		}
 	}
+
+	h.session.Logger.Info("Audio handler goroutine stopped")
 }
 
 func (h *AudioHandler) ProcessAudioData(audioData []byte) error {

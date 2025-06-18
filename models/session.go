@@ -9,6 +9,10 @@ import (
 	"go.uber.org/zap"
 )
 
+const (
+	SESSION_END = "<SESSION_END>"
+)
+
 type RoboSession struct {
 	ID                   string
 	CurrentContext       context.Context
@@ -103,8 +107,14 @@ func (rs *RoboSession) UpdateContext() {
 	rs.LastActivity = time.Now()
 }
 
-func (rs *RoboSession) Close() {
+func (rs *RoboSession) Stop() {
+	rs.Logger.Info("Stopping session")
 	rs.IsActive = false
+
+	// Send SESSION_END to all channels to stop all goroutines
+	rs.SendToAllChannels(SESSION_END)
+
+	// Cancel current context
 	rs.CancelCurrentContext()
 
 	// Close all channels
@@ -116,4 +126,24 @@ func (rs *RoboSession) Close() {
 	if rs.Connection != nil {
 		rs.Connection.Close()
 	}
+}
+
+func (rs *RoboSession) SendToAllChannels(message string) {
+	// Send to all channels that accept strings
+	select {
+	case rs.TranscriptionCh <- message:
+	default:
+	}
+	select {
+	case rs.InterruptionCh <- message:
+	default:
+	}
+	select {
+	case rs.VideoAnalysisCh <- message:
+	default:
+	}
+}
+
+func (rs *RoboSession) Close() {
+	rs.Stop()
 }

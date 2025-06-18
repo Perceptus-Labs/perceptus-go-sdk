@@ -45,29 +45,44 @@ func InitVideoHandler(session *models.RoboSession) *VideoHandler {
 	}
 
 	session.Logger.Info("Video Handler initialized")
+
+	// Start the continuous video processing goroutine
+	go videoHandler.run()
+
 	return videoHandler
 }
 
-func (h *VideoHandler) StartPeriodicCapture() {
-	h.session.Logger.Info("Started periodic video capture", zap.Duration("frequency", h.session.VideoFrequency))
+func (h *VideoHandler) run() {
+	h.session.Logger.Info("Video handler goroutine started", zap.Duration("frequency", h.session.VideoFrequency))
 
 	ticker := time.NewTicker(h.session.VideoFrequency)
 	defer ticker.Stop()
 
 	for h.isActive {
 		select {
+		case videoAnalysis := <-h.session.VideoAnalysisCh:
+			if videoAnalysis == models.SESSION_END {
+				h.session.Logger.Info("Video handler received SESSION_END")
+				return
+			}
+			// Process video analysis (handled by orchestrator)
+
 		case <-ticker.C:
+			// Periodic video capture and analysis
 			go h.captureAndAnalyze()
 
 		case <-h.session.CurrentContext.Done():
-			h.session.Logger.Info("Periodic video capture stopped - context cancelled")
-			return
+			h.session.Logger.Debug("Video handler context cancelled")
+			// Don't exit, just wait for next tick or SESSION_END
 		}
 	}
+
+	h.session.Logger.Info("Video handler goroutine stopped")
 }
 
 func (h *VideoHandler) captureAndAnalyze() {
-	ctx, cancel := context.WithTimeout(h.session.CurrentContext, 30*time.Second)
+	// Create a new context with timeout for this specific operation
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	h.session.Logger.Debug("Capturing and analyzing image")
@@ -77,6 +92,14 @@ func (h *VideoHandler) captureAndAnalyze() {
 	if err != nil {
 		h.session.Logger.Error("Failed to capture image", zap.Error(err))
 		return
+	}
+
+	// Check if context was cancelled before proceeding with expensive API call
+	select {
+	case <-ctx.Done():
+		h.session.Logger.Debug("Context cancelled before image analysis")
+		return
+	default:
 	}
 
 	// Analyze image with OpenAI GPT-4V
@@ -107,7 +130,7 @@ func (h *VideoHandler) captureAndAnalyze() {
 		Timestamp:          time.Now(),
 	}
 
-	// Store in Pinecone if available
+	// Store in Pinecone if available (async)
 	if h.pineconeIdx != nil {
 		go h.storeEnvironmentContext(envContext)
 	}
@@ -125,7 +148,8 @@ func (h *VideoHandler) captureAndAnalyze() {
 }
 
 func (h *VideoHandler) CaptureImageForContext(transcript string) (string, error) {
-	ctx, cancel := context.WithTimeout(h.session.CurrentContext, 15*time.Second)
+	// Create a new context with timeout for this specific operation
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
 	h.session.Logger.Info("Capturing image for context analysis")
@@ -134,6 +158,13 @@ func (h *VideoHandler) CaptureImageForContext(transcript string) (string, error)
 	imageData, err := h.camera.TryCapture()
 	if err != nil {
 		return "", fmt.Errorf("failed to capture image: %w", err)
+	}
+
+	// Check if context was cancelled before proceeding with expensive API call
+	select {
+	case <-ctx.Done():
+		return "", fmt.Errorf("context cancelled before image analysis")
+	default:
 	}
 
 	// Create a more specific prompt based on the transcript
@@ -155,7 +186,7 @@ Provide a detailed but concise description focusing on elements that would be mo
 
 	h.session.Logger.Debug("Generated contextual environment description")
 
-	// Store this context in Pinecone as well
+	// Store this context in Pinecone as well (async)
 	if h.pineconeIdx != nil {
 		envContext := models.EnvironmentContext{
 			ID:          fmt.Sprintf("%s-context-%d", h.session.ID, time.Now().Unix()),
@@ -201,7 +232,8 @@ func (h *VideoHandler) storeEnvironmentContext(envContext models.EnvironmentCont
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(h.session.CurrentContext, 10*time.Second)
+	// Create a new context with timeout for this specific operation
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	h.session.Logger.Debug("Storing environment context in Pinecone")
@@ -210,6 +242,14 @@ func (h *VideoHandler) storeEnvironmentContext(envContext models.EnvironmentCont
 	allTexts := append(envContext.Objects, envContext.Description)
 
 	for i, text := range allTexts {
+		// Check if context was cancelled before proceeding
+		select {
+		case <-ctx.Done():
+			h.session.Logger.Debug("Context cancelled during Pinecone storage")
+			return
+		default:
+		}
+
 		// Create embedding
 		embedding, err := utils.VectorizePrompt("text-embedding-ada-002", ctx, text)
 		if err != nil {
