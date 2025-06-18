@@ -52,12 +52,6 @@ func main() {
 	}
 	zap.L().Info("Successfully connected to Redis")
 
-	// Define HTTP routes
-	http.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
-	})
-
 	// Main websocket endpoint for robot sessions
 	http.HandleFunc("/robot-session", func(w http.ResponseWriter, r *http.Request) {
 		handlers.HandleRobotSession(w, r, redisClient)
