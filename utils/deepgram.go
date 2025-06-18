@@ -17,10 +17,9 @@ import (
 )
 
 type DeepgramCallback struct {
-	TranscriptionChannel    chan string
-	InterruptionChannel     chan string
-	useDeepgramUtteranceEnd bool
-	confidenceThreshold     float64
+	TranscriptionChannel chan string
+	InterruptionChannel  chan string
+	confidenceThreshold  float64
 
 	lang                string
 	totalAudioBytesSent int64
@@ -37,9 +36,6 @@ func (c *DeepgramCallback) defaultConfidenceThreshold() float64 {
 
 func InitDeepgramClient(
 	lang string,
-	useDeepgramNova3 bool,
-	useDeepgramUtteranceEnd bool,
-	utteranceEndThreshold int,
 	confidenceThreshold string,
 	transcriptionCh,
 	interruptionCh chan string,
@@ -51,9 +47,6 @@ func InitDeepgramClient(
 	}
 
 	model := "nova-3"
-	if !useDeepgramNova3 {
-		model = "nova-2"
-	}
 
 	ctx := context.Background()
 	transcriptOptions := &interfaces.LiveTranscriptionOptions{
@@ -65,15 +58,12 @@ func InitDeepgramClient(
 		InterimResults: true,
 		FillerWords:    true,
 		Model:          model,
+		UtteranceEndMs: "1500",
 	}
 
 	if lang != "en" && model == "nova-3" {
 		log.Warn("Using multilingual model for non-English language on Nova 3:", lang)
 		transcriptOptions.Language = "multi"
-	}
-
-	if useDeepgramUtteranceEnd {
-		transcriptOptions.UtteranceEndMs = strconv.Itoa(utteranceEndThreshold)
 	}
 
 	clientOptions := &interfaces.ClientOptions{
@@ -86,10 +76,9 @@ func InitDeepgramClient(
 	log.Info("Confidence threshold:", confidenceThresholdFloat)
 
 	callback := &DeepgramCallback{
-		TranscriptionChannel:    transcriptionCh,
-		InterruptionChannel:     interruptionCh,
-		useDeepgramUtteranceEnd: useDeepgramUtteranceEnd,
-		confidenceThreshold:     confidenceThresholdFloat,
+		TranscriptionChannel: transcriptionCh,
+		InterruptionChannel:  interruptionCh,
+		confidenceThreshold:  confidenceThresholdFloat,
 
 		lang:                lang,
 		totalAudioBytesSent: 0,
@@ -160,11 +149,6 @@ func (c *DeepgramCallback) Message(mr *msginterfaces.MessageResponse) error {
 		c.TranscriptionChannel <- transcript
 	} else {
 		log.Debug("Interim transcript:", transcript)
-	}
-
-	if !c.useDeepgramUtteranceEnd && mr.SpeechFinal {
-		log.Debug("Speech final")
-		c.TranscriptionChannel <- "<END_OF_SPEECH>"
 	}
 
 	return nil
