@@ -1,4 +1,4 @@
-module github.com/haohanwang/perceptus-go-sdk
+module github.com/Perceptus-Labs/perceptus-go-sdk
 
 go 1.23.0
 
@@ -6,6 +6,7 @@ toolchain go1.24.3
 
 require (
 	github.com/deepgram/deepgram-go-sdk v1.9.0
+	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/lpernett/godotenv v0.0.0-20230527005122-0de1d4c5ef5e
 	github.com/pinecone-io/go-pinecone v1.1.1
@@ -21,7 +22,6 @@ require (
 	github.com/dvonthenen/websocket v1.5.1-dyv.2 // indirect
 	github.com/fatih/color v1.15.0 // indirect
 	github.com/go-logr/logr v1.4.2 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/schema v1.3.0 // indirect
 	github.com/hokaccha/go-prettyjson v0.0.0-20211117102719-0474bc63780f // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect

@@ -8,6 +8,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/Perceptus-Labs/perceptus-go-sdk/handlers"
 	"github.com/lpernett/godotenv"
 	"github.com/redis/go-redis/v9"
 	log "github.com/sirupsen/logrus"
@@ -30,7 +31,7 @@ func main() {
 		ForceColors:   true,
 		FullTimestamp: true,
 	})
-	log.Info("Server Version: Agent Editor V2")
+	log.Info("Server Version: Perceptus Robot SDK V1")
 
 	// Set up Redis connection
 	redisClient := redis.NewClient(&redis.Options{
@@ -50,19 +51,15 @@ func main() {
 	log.Info("Successfully connected to Redis")
 
 	// Define HTTP routes
-	// http.HandleFunc("/healthz", handlers.HealthCheckHandler)
-	// http.HandleFunc("/twilio-va", func(w http.ResponseWriter, r *http.Request) {
-	// 	handlers.TwilioSocketHandler(w, r, redisClient, influxService)
-	// })
-	// http.HandleFunc("/telnyx-va/texml", func(w http.ResponseWriter, r *http.Request) {
-	// 	handlers.TelnyxSocketHandler(w, r, redisClient, influxService)
-	// })
-	// http.HandleFunc("/telnyx-va/voice-api-v2", func(w http.ResponseWriter, r *http.Request) {
-	// 	handlers.TelnyxSocketHandler(w, r, redisClient, influxService)
-	// })
-	// http.HandleFunc("/text", func(w http.ResponseWriter, r *http.Request) {
-	// 	handlers.TextChatEndpointHandler(w, r, redisClient, influxService)
-	// })
+	http.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("OK"))
+	})
+
+	// Main websocket endpoint for robot sessions
+	http.HandleFunc("/robot-session", func(w http.ResponseWriter, r *http.Request) {
+		handlers.HandleRobotSession(w, r, redisClient)
+	})
 
 	// Set up signal handling
 	stop := make(chan os.Signal, 1)

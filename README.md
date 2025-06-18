@@ -20,7 +20,7 @@ A Go-based SDK for real-time context management and multimedia processing using 
 ## Installation
 
 ```bash
-go get github.com/haohanwang/perceptus-go-sdk
+go get github.com/Perceptus-Labs/perceptus-go-sdk
 ```
 
 ## Project Structure

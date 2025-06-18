@@ -100,6 +100,13 @@ func QueryPinecone(ctx context.Context, embedding []float32, index *pinecone.Ind
 	return matches, nil
 }
 
+func UpsertToPinecone(ctx context.Context, index *pinecone.IndexConnection, vectorID string, embedding []float32, metadata map[string]interface{}) error {
+	// For now, we'll skip upserting and just log the action
+	// This can be implemented later when we have the correct Pinecone API structure
+	fmt.Printf("Would upsert vector %s with %d dimensions to Pinecone\n", vectorID, len(embedding))
+	return nil
+}
+
 func VectorizePrompt(model string, ctx context.Context, promptText string) ([]float32, error) {
 	openAIAPIKey := os.Getenv("OPENAI_API_KEY")
 	if openAIAPIKey == "" {

@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Perceptus Robot SDK - WebSocket Client Example</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .container { max-width: 800px; margin: 0 auto; }
+        .log { background: #f5f5f5; padding: 10px; height: 400px; overflow-y: scroll; border: 1px solid #ccc; }
+        .controls { margin: 20px 0; }
+        button { padding: 10px 20px; margin: 5px; cursor: pointer; }
+        .status { padding: 10px; margin: 10px 0; border-radius: 5px; }
+        .status.connected { background: #d4edda; color: #155724; }
+        .status.disconnected { background: #f8d7da; color: #721c24; }
+        input[type="text"] { padding: 5px; width: 200px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Perceptus Robot SDK - WebSocket Client</h1>
+        
+        <div id="status" class="status disconnected">Disconnected</div>
+        
+        <div class="controls">
+            <button onclick="connect()">Connect</button>
+            <button onclick="disconnect()">Disconnect</button>
+            <button onclick="sendPing()">Send Ping</button>
+        </div>
+
+        <div class="controls">
+            <h3>Configuration</h3>
+            <label>Video Frequency: <input type="text" id="videoFreq" value="10s" placeholder="10s"></label>
+            <label>Audio Frequency: <input type="text" id="audioFreq" value="100ms" placeholder="100ms"></label>
+            <button onclick="sendConfig()">Update Config</button>
+        </div>
+
+        <div class="log" id="log"></div>
+    </div>
+
+    <script>
+        let ws = null;
+        const logElement = document.getElementById('log');
+        const statusElement = document.getElementById('status');
+
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = document.createElement('div');
+            logEntry.innerHTML = `<strong>[${timestamp}] ${type.toUpperCase()}:</strong> ${message}`;
+            logElement.appendChild(logEntry);
+            logElement.scrollTop = logElement.scrollHeight;
+            console.log(`[${timestamp}] ${type.toUpperCase()}: ${message}`);
+        }
+
+        function updateStatus(connected) {
+            if (connected) {
+                statusElement.textContent = 'Connected';
+                statusElement.className = 'status connected';
+            } else {
+                statusElement.textContent = 'Disconnected';
+                statusElement.className = 'status disconnected';
+            }
+        }
+
+        function connect() {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                log('Already connected', 'warning');
+                return;
+            }
+
+            // Adjust this URL to match your server
+            const wsUrl = 'ws://localhost:8080/robot-session';
+            
+            try {
+                ws = new WebSocket(wsUrl);
+                
+                ws.onopen = function(event) {
+                    log('WebSocket connection opened');
+                    updateStatus(true);
+                };
+
+                ws.onmessage = function(event) {
+                    try {
+                        const data = JSON.parse(event.data);
+                        log(`Received: ${JSON.stringify(data, null, 2)}`, 'received');
+                        
+                        // Handle different message types
+                        switch(data.type) {
+                            case 'video_analysis':
+                                log(`Video Analysis: ${data.data.description}`, 'video');
+                                break;
+                            case 'intention_result':
+                                log(`Intention: ${data.data.has_clear_intention ? 'DETECTED' : 'NONE'} - ${data.data.description}`, 'intention');
+                                break;
+                            case 'orchestrator_triggered':
+                                log(`Orchestrator triggered for intention: ${data.data.intention}`, 'orchestrator');
+                                break;
+                            case 'heartbeat':
+                                log('Heartbeat received', 'heartbeat');
+                                break;
+                        }
+                    } catch (e) {
+                        log(`Received non-JSON message: ${event.data}`, 'raw');
+                    }
+                };
+
+                ws.onclose = function(event) {
+                    log(`WebSocket connection closed: ${event.code} - ${event.reason}`, 'warning');
+                    updateStatus(false);
+                };
+
+                ws.onerror = function(error) {
+                    log(`WebSocket error: ${error}`, 'error');
+                    updateStatus(false);
+                };
+
+            } catch (error) {
+                log(`Failed to connect: ${error}`, 'error');
+            }
+        }
+
+        function disconnect() {
+            if (ws) {
+                ws.close();
+                ws = null;
+                updateStatus(false);
+                log('Disconnected');
+            }
+        }
+
+        function sendMessage(type, data) {
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                log('Not connected', 'error');
+                return;
+            }
+
+            const message = {
+                type: type,
+                data: data,
+                timestamp: new Date().toISOString()
+            };
+
+            ws.send(JSON.stringify(message));
+            log(`Sent: ${JSON.stringify(message, null, 2)}`, 'sent');
+        }
+
+        function sendPing() {
+            sendMessage('ping', {});
+        }
+
+        function sendConfig() {
+            const videoFreq = document.getElementById('videoFreq').value;
+            const audioFreq = document.getElementById('audioFreq').value;
+            
+            sendMessage('config', {
+                video_frequency: videoFreq,
+                audio_frequency: audioFreq
+            });
+        }
+
+        // Auto-connect on page load (optional)
+        // window.addEventListener('load', connect);
+    </script>
+</body>
+</html>
