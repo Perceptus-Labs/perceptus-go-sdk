@@ -46,7 +46,7 @@ type IntentionResult struct {
 	IntentionType      string
 	Description        string
 	Confidence         float64
-	EnvironmentContext []string
+	EnvironmentContext string
 	TranscriptAnalysis string
 	Timestamp          time.Time
 }

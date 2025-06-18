@@ -229,8 +229,9 @@ func sendWebSocketMessage(session *models.RoboSession, msgType string, data inte
 }
 
 func triggerOrchestrator(session *models.RoboSession, intention models.IntentionResult) {
-	orchestratorEndpoint := getOrchestratorEndpoint()
-	apiKey := getOrchestratorAPIKey()
+	session.Logger.Info("Triggering orchestrator", zap.Any("intention", intention))
+	orchestratorEndpoint := os.Getenv("ORCHESTRATOR_ENDPOINT")
+	apiKey := os.Getenv("ORCHESTRATOR_API_KEY")
 
 	if orchestratorEndpoint == "" || apiKey == "" {
 		session.Logger.Error("Orchestrator endpoint or API key not configured")
@@ -287,16 +288,4 @@ func triggerOrchestrator(session *models.RoboSession, intention models.Intention
 	} else {
 		session.Logger.Error("Orchestrator returned error status", zap.Int("status", resp.StatusCode))
 	}
-}
-
-func getOrchestratorEndpoint() string {
-	endpoint := os.Getenv("ORCHESTRATOR_ENDPOINT")
-	if endpoint == "" {
-		return "http://localhost:8080" // Default fallback
-	}
-	return endpoint
-}
-
-func getOrchestratorAPIKey() string {
-	return os.Getenv("ORCHESTRATOR_API_KEY")
 }

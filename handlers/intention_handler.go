@@ -122,7 +122,7 @@ func (h *IntentionHandler) analyzeIntention(transcript string) {
 		IntentionType:      intentionType,
 		Description:        description,
 		Confidence:         confidence,
-		EnvironmentContext: environmentContext,
+		EnvironmentContext: strings.Join(environmentContext, "\n"),
 		TranscriptAnalysis: intention,
 		Timestamp:          time.Now(),
 	}
