@@ -11,27 +11,29 @@ import (
 	"github.com/Perceptus-Labs/perceptus-go-sdk/handlers"
 	"github.com/lpernett/godotenv"
 	"github.com/redis/go-redis/v9"
-	log "github.com/sirupsen/logrus"
+	"go.uber.org/zap"
 )
 
 // Load environment variables from .env file
 // Without this, it tries to use the SSL cert logic
 func init() {
-	log.Info("Loading environment variables")
-	err := godotenv.Load()
+	// Initialize zap logger
+	logger, err := zap.NewDevelopment()
 	if err != nil {
-		log.Warn("Error loading .env file")
+		panic("Failed to initialize logger: " + err.Error())
+	}
+	zap.ReplaceGlobals(logger)
+
+	zap.L().Info("Loading environment variables")
+	err = godotenv.Load()
+	if err != nil {
+		zap.L().Warn("Error loading .env file")
 	}
 }
 
 func main() {
 	// Set up logging
-	log.SetLevel(log.DebugLevel)
-	log.SetFormatter(&log.TextFormatter{
-		ForceColors:   true,
-		FullTimestamp: true,
-	})
-	log.Info("Server Version: Perceptus Robot SDK V1")
+	zap.L().Info("Server Version: Perceptus Robot SDK V1")
 
 	// Set up Redis connection
 	redisClient := redis.NewClient(&redis.Options{
@@ -46,9 +48,9 @@ func main() {
 
 	_, err := redisClient.Ping(redisCtx).Result()
 	if err != nil {
-		log.Fatalf("Failed to connect to Redis: %v", err)
+		zap.L().Fatal("Failed to connect to Redis", zap.Error(err))
 	}
-	log.Info("Successfully connected to Redis")
+	zap.L().Info("Successfully connected to Redis")
 
 	// Define HTTP routes
 	http.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
@@ -77,21 +79,21 @@ func main() {
 		if port == ":" {
 			port = ":8080"
 		}
-		log.Info("Starting server on...", port)
-		log.Fatal(http.ListenAndServe(port, nil))
+		zap.L().Info("Starting server", zap.String("port", port))
+		zap.L().Fatal("Server error", zap.Error(http.ListenAndServe(port, nil)))
 		close(serverExit)
 	}()
 
 	// On termination, close all connections and shut down the server
 	select {
 	case <-stop:
-		log.Info("Shutting down server...")
+		zap.L().Info("Shutting down server...")
 	case <-serverExit:
-		log.Info("Server exited unexpectedly...")
+		zap.L().Info("Server exited unexpectedly...")
 	}
 
 	// Cancel the context to stop the connection reset scheduler
 	cancelServer()
 
-	log.Info("Server shut down gracefully")
+	zap.L().Info("Server shut down gracefully")
 }

@@ -5,7 +5,7 @@ import (
 	"os/exec"
 	"runtime"
 
-	log "github.com/sirupsen/logrus"
+	"go.uber.org/zap"
 )
 
 type CameraCapture struct {
@@ -40,7 +40,7 @@ func (c *CameraCapture) CaptureImage() ([]byte, error) {
 	// Execute the command and capture output
 	output, err := cmd.Output()
 	if err != nil {
-		log.WithError(err).Error("Failed to capture image from camera")
+		zap.L().Error("Failed to capture image from camera", zap.Error(err))
 		return nil, fmt.Errorf("failed to capture image: %w", err)
 	}
 
@@ -48,7 +48,7 @@ func (c *CameraCapture) CaptureImage() ([]byte, error) {
 		return nil, fmt.Errorf("no image data captured")
 	}
 
-	log.Debug("Successfully captured image", "size", len(output))
+	zap.L().Debug("Successfully captured image", zap.Int("size", len(output)))
 	return output, nil
 }
 
@@ -62,7 +62,7 @@ func (c *CameraCapture) CaptureImageMacOS() ([]byte, error) {
 	cmd := exec.Command("imagesnap", "-")
 	output, err := cmd.Output()
 	if err != nil {
-		log.WithError(err).Error("Failed to capture image using imagesnap")
+		zap.L().Error("Failed to capture image using imagesnap", zap.Error(err))
 		return nil, fmt.Errorf("failed to capture image with imagesnap: %w", err)
 	}
 
@@ -70,7 +70,7 @@ func (c *CameraCapture) CaptureImageMacOS() ([]byte, error) {
 		return nil, fmt.Errorf("no image data captured")
 	}
 
-	log.Debug("Successfully captured image using imagesnap", "size", len(output))
+	zap.L().Debug("Successfully captured image using imagesnap", zap.Int("size", len(output)))
 	return output, nil
 }
 
@@ -82,7 +82,7 @@ func (c *CameraCapture) TryCapture() ([]byte, error) {
 		return data, nil
 	}
 
-	log.WithError(err).Warn("Primary capture method failed, trying alternatives")
+	zap.L().Warn("Primary capture method failed, trying alternatives", zap.Error(err))
 
 	// On macOS, try imagesnap as an alternative
 	if runtime.GOOS == "darwin" {
@@ -90,7 +90,7 @@ func (c *CameraCapture) TryCapture() ([]byte, error) {
 		if err == nil {
 			return data, nil
 		}
-		log.WithError(err).Warn("Alternative capture method also failed")
+		zap.L().Warn("Alternative capture method also failed", zap.Error(err))
 	}
 
 	return nil, fmt.Errorf("all capture methods failed")
