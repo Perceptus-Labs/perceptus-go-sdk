@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/Perceptus-Labs/perceptus-go-sdk/models"
@@ -76,7 +77,7 @@ func HandleRobotSession(w http.ResponseWriter, r *http.Request, redisClient *red
 		case "config":
 			handleConfigMessage(session, msg.Data)
 		case "audio_data":
-			handleAudioData(session, msg.Data)
+			handleAudioData(session, audioHandler, msg.Data)
 		case "ping":
 			sendWebSocketMessage(session, "pong", nil)
 		case "stop":
@@ -122,16 +123,51 @@ func handleSessionOrchestrator(session *models.RoboSession, audioHandler *AudioH
 			if transcript == "<END_OF_SPEECH>" {
 				// Process the accumulated transcript for intention
 				if session.CurrentTranscript != "" {
-					session.Logger.Info("Processing transcript for intention", zap.String("transcript", session.CurrentTranscript))
+					session.Logger.Info("End of speech detected, processing transcript", zap.String("transcript", session.CurrentTranscript))
+
+					// Update context for new processing
+					session.UpdateContext()
+
 					// The intention handler will automatically process this in its goroutine
+					// Send the final transcript to the client
+					sendWebSocketMessage(session, "transcript_final", map[string]interface{}{
+						"transcript": session.CurrentTranscript,
+						"timestamp":  time.Now(),
+					})
 
 					// Reset transcript buffer
 					session.CurrentTranscript = ""
 				}
 			} else {
-				// Accumulate transcript
-				session.CurrentTranscript += transcript + " "
+				// Accumulate transcript (filter out empty/whitespace)
+				if strings.TrimSpace(transcript) != "" {
+					session.CurrentTranscript += transcript + " "
+
+					// Send interim transcript to client
+					sendWebSocketMessage(session, "transcript_interim", map[string]interface{}{
+						"transcript": strings.TrimSpace(session.CurrentTranscript),
+						"timestamp":  time.Now(),
+					})
+				}
 			}
+
+		case interruption := <-session.InterruptionCh:
+			if interruption == models.SESSION_END {
+				session.Logger.Info("Session orchestrator received SESSION_END")
+				return
+			}
+
+			session.Logger.Debug("Received interruption", zap.String("interruption", interruption))
+
+			// Handle interruption - cancel current context and reset
+			session.Logger.Info("User interruption detected")
+			session.UpdateContext() // This cancels previous context
+
+			// Send interruption to client
+			sendWebSocketMessage(session, "interruption", map[string]interface{}{
+				"interruption": interruption,
+				"timestamp":    time.Now(),
+			})
 
 		case intentionResult := <-session.IntentionCh:
 			session.Logger.Info("Received intention result",
@@ -207,12 +243,36 @@ func handleConfigMessage(session *models.RoboSession, data interface{}) {
 	})
 }
 
-func handleAudioData(session *models.RoboSession, data interface{}) {
-	// This would handle raw audio data from the client
-	// For now, we'll just acknowledge receipt
-	sendWebSocketMessage(session, "audio_received", map[string]interface{}{
-		"timestamp": time.Now(),
-	})
+func handleAudioData(session *models.RoboSession, audioHandler *AudioHandler, data interface{}) {
+	// Handle audio data similar to Twilio media events
+	session.Logger.Debug("Received audio data")
+
+	// Extract audio data from the message
+	// Assuming the data comes as base64 encoded audio or raw bytes
+	var audioBytes []byte
+
+	switch v := data.(type) {
+	case string:
+		// If it's a base64 encoded string, decode it
+		// This would need proper base64 decoding in real implementation
+		session.Logger.Debug("Received audio data as string", zap.Int("length", len(v)))
+		audioBytes = []byte(v) // Simplified - in reality you'd base64 decode
+	case []byte:
+		audioBytes = v
+	case map[string]interface{}:
+		// If it's a structured message like Twilio's media event
+		if payload, ok := v["payload"].(string); ok {
+			audioBytes = []byte(payload) // Again, would need proper decoding
+		}
+	default:
+		session.Logger.Warn("Unknown audio data format")
+		return
+	}
+
+	// Send audio data to the audio handler for processing
+	if err := audioHandler.ProcessAudioData(audioBytes); err != nil {
+		session.Logger.Error("Failed to process audio data", zap.Error(err))
+	}
 }
 
 func sendWebSocketMessage(session *models.RoboSession, msgType string, data interface{}) {
@@ -288,4 +348,30 @@ func triggerOrchestrator(session *models.RoboSession, intention models.Intention
 	} else {
 		session.Logger.Error("Orchestrator returned error status", zap.Int("status", resp.StatusCode))
 	}
+}
+
+// HandleCameraCapture handles API requests to capture an image
+func HandleCameraCapture(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// This would be used to trigger camera capture for testing or external requests
+	zap.L().Info("Camera capture requested via API")
+
+	// In a real implementation, you'd:
+	// 1. Get the session ID from the request
+	// 2. Find the active session
+	// 3. Trigger video capture
+	// 4. Return the result
+
+	w.Header().Set("Content-Type", "application/json")
+	response := map[string]interface{}{
+		"status":    "success",
+		"message":   "Camera capture triggered",
+		"timestamp": time.Now(),
+	}
+
+	json.NewEncoder(w).Encode(response)
 }

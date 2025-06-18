@@ -1,8 +1,6 @@
 package handlers
 
 import (
-	"time"
-
 	"github.com/Perceptus-Labs/perceptus-go-sdk/models"
 	"github.com/Perceptus-Labs/perceptus-go-sdk/utils"
 	"go.uber.org/zap"
@@ -36,7 +34,7 @@ func InitAudioHandler(session *models.RoboSession) (*AudioHandler, error) {
 
 	session.Logger.Info("Audio Handler initialized and connected to Deepgram")
 
-	// Start the continuous audio processing goroutine
+	// Start the handler goroutine to listen for SESSION_END
 	go audioHandler.run()
 
 	return audioHandler, nil
@@ -45,9 +43,6 @@ func InitAudioHandler(session *models.RoboSession) (*AudioHandler, error) {
 func (h *AudioHandler) run() {
 	h.session.Logger.Info("Audio handler goroutine started")
 
-	ticker := time.NewTicker(h.session.AudioFrequency)
-	defer ticker.Stop()
-
 	for h.isActive {
 		select {
 		case transcript := <-h.session.TranscriptionCh:
@@ -55,35 +50,33 @@ func (h *AudioHandler) run() {
 				h.session.Logger.Info("Audio handler received SESSION_END")
 				return
 			}
-			// Process transcript (handled by orchestrator)
+			// Process transcript - this gets handled by the orchestrator
+			h.session.Logger.Debug("Received transcript", zap.String("transcript", transcript))
 
 		case interruption := <-h.session.InterruptionCh:
 			if interruption == models.SESSION_END {
 				h.session.Logger.Info("Audio handler received SESSION_END")
 				return
 			}
-			// Process interruption (handled by orchestrator)
-
-		case <-ticker.C:
-			// Audio processing tick - this is where real audio processing would happen
-			// For now, we just maintain the connection
-			h.session.Logger.Debug("Audio processing tick")
+			// Process interruption - this gets handled by the orchestrator
+			h.session.Logger.Debug("Received interruption", zap.String("interruption", interruption))
 
 		case <-h.session.CurrentContext.Done():
 			h.session.Logger.Debug("Audio handler context cancelled")
-			// Don't exit, just wait for next tick or SESSION_END
+			// Don't exit, just wait for next message or SESSION_END
 		}
 	}
 
 	h.session.Logger.Info("Audio handler goroutine stopped")
 }
 
+// ProcessAudioData sends audio data directly to Deepgram (called from WebSocket handler)
 func (h *AudioHandler) ProcessAudioData(audioData []byte) error {
 	if !h.isActive {
 		return nil
 	}
 
-	// Send audio data to Deepgram
+	// Send audio data to Deepgram immediately
 	err := h.deepgramClient.Send(audioData)
 	if err != nil {
 		h.session.Logger.Error("Failed to send audio data to Deepgram", zap.Error(err))

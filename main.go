@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"os"
 	"os/signal"
@@ -52,9 +53,20 @@ func main() {
 	}
 	zap.L().Info("Successfully connected to Redis")
 
-	// Main websocket endpoint for robot sessions
-	http.HandleFunc("/robot-session", func(w http.ResponseWriter, r *http.Request) {
+	// WebSocket endpoint for robot sessions
+	http.HandleFunc("/robot/session", func(w http.ResponseWriter, r *http.Request) {
 		handlers.HandleRobotSession(w, r, redisClient)
+	})
+
+	// API endpoint to trigger camera capture
+	http.HandleFunc("/robot/capture", func(w http.ResponseWriter, r *http.Request) {
+		handlers.HandleCameraCapture(w, r)
+	})
+
+	// Health check endpoint
+	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	})
 
 	// Set up signal handling

@@ -1,163 +1,265 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Perceptus Robot SDK - WebSocket Client Example</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Perceptus Robot Session Client</title>
     <style>
-        body { font-family: Arial, sans-serif; margin: 20px; }
-        .container { max-width: 800px; margin: 0 auto; }
-        .log { background: #f5f5f5; padding: 10px; height: 400px; overflow-y: scroll; border: 1px solid #ccc; }
-        .controls { margin: 20px 0; }
-        button { padding: 10px 20px; margin: 5px; cursor: pointer; }
-        .status { padding: 10px; margin: 10px 0; border-radius: 5px; }
-        .status.connected { background: #d4edda; color: #155724; }
-        .status.disconnected { background: #f8d7da; color: #721c24; }
-        input[type="text"] { padding: 5px; width: 200px; }
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .container {
+            border: 1px solid #ccc;
+            padding: 20px;
+            border-radius: 5px;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+        }
+        .connected { background-color: #d4edda; color: #155724; }
+        .disconnected { background-color: #f8d7da; color: #721c24; }
+        .message {
+            background-color: #f8f9fa;
+            padding: 10px;
+            margin: 5px 0;
+            border-left: 4px solid #007bff;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            margin: 5px;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+        .transcript {
+            background-color: #e7f3ff;
+            border-left: 4px solid #2196F3;
+        }
+        .intention {
+            background-color: #fff3e0;
+            border-left: 4px solid #ff9800;
+        }
+        .video {
+            background-color: #f3e5f5;
+            border-left: 4px solid #9c27b0;
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>Perceptus Robot SDK - WebSocket Client</h1>
+        <h1>Perceptus Robot Session Client</h1>
         
-        <div id="status" class="status disconnected">Disconnected</div>
-        
-        <div class="controls">
-            <button onclick="connect()">Connect</button>
-            <button onclick="disconnect()">Disconnect</button>
-            <button onclick="sendPing()">Send Ping</button>
+        <div id="status" class="status disconnected">
+            Disconnected
         </div>
-
-        <div class="controls">
+        
+        <div>
+            <button id="connectBtn" onclick="connect()">Connect</button>
+            <button id="disconnectBtn" onclick="disconnect()" disabled>Disconnect</button>
+            <button id="pingBtn" onclick="sendPing()" disabled>Send Ping</button>
+            <button id="stopBtn" onclick="stopSession()" disabled>Stop Session</button>
+        </div>
+        
+        <div>
+            <h3>Send Test Audio Data</h3>
+            <button id="audioBtn" onclick="sendTestAudio()" disabled>Send Test Audio</button>
+            <button id="captureBtn" onclick="triggerCapture()" disabled>Trigger Camera Capture</button>
+        </div>
+        
+        <div>
             <h3>Configuration</h3>
-            <label>Video Frequency: <input type="text" id="videoFreq" value="10s" placeholder="10s"></label>
-            <label>Audio Frequency: <input type="text" id="audioFreq" value="100ms" placeholder="100ms"></label>
-            <button onclick="sendConfig()">Update Config</button>
+            <label>
+                Video Frequency: 
+                <select id="videoFreq">
+                    <option value="5s">5 seconds</option>
+                    <option value="10s" selected>10 seconds</option>
+                    <option value="30s">30 seconds</option>
+                </select>
+            </label>
+            <button onclick="sendConfig()" disabled id="configBtn">Update Config</button>
         </div>
-
-        <div class="log" id="log"></div>
+        
+        <div>
+            <h3>Messages</h3>
+            <button onclick="clearMessages()">Clear</button>
+            <div id="messages"></div>
+        </div>
     </div>
 
     <script>
         let ws = null;
-        const logElement = document.getElementById('log');
-        const statusElement = document.getElementById('status');
-
-        function log(message, type = 'info') {
-            const timestamp = new Date().toLocaleTimeString();
-            const logEntry = document.createElement('div');
-            logEntry.innerHTML = `<strong>[${timestamp}] ${type.toUpperCase()}:</strong> ${message}`;
-            logElement.appendChild(logEntry);
-            logElement.scrollTop = logElement.scrollHeight;
-            console.log(`[${timestamp}] ${type.toUpperCase()}: ${message}`);
-        }
-
-        function updateStatus(connected) {
-            if (connected) {
-                statusElement.textContent = 'Connected';
-                statusElement.className = 'status connected';
-            } else {
-                statusElement.textContent = 'Disconnected';
-                statusElement.className = 'status disconnected';
-            }
-        }
+        let sessionId = null;
 
         function connect() {
-            if (ws && ws.readyState === WebSocket.OPEN) {
-                log('Already connected', 'warning');
-                return;
-            }
-
-            // Adjust this URL to match your server
-            const wsUrl = 'ws://localhost:8080/robot-session';
+            const wsUrl = `ws://localhost:8080/robot/session`;
+            ws = new WebSocket(wsUrl);
             
-            try {
-                ws = new WebSocket(wsUrl);
-                
-                ws.onopen = function(event) {
-                    log('WebSocket connection opened');
-                    updateStatus(true);
-                };
-
-                ws.onmessage = function(event) {
-                    try {
-                        const data = JSON.parse(event.data);
-                        log(`Received: ${JSON.stringify(data, null, 2)}`, 'received');
-                        
-                        // Handle different message types
-                        switch(data.type) {
-                            case 'video_analysis':
-                                log(`Video Analysis: ${data.data.description}`, 'video');
-                                break;
-                            case 'intention_result':
-                                log(`Intention: ${data.data.has_clear_intention ? 'DETECTED' : 'NONE'} - ${data.data.description}`, 'intention');
-                                break;
-                            case 'orchestrator_triggered':
-                                log(`Orchestrator triggered for intention: ${data.data.intention}`, 'orchestrator');
-                                break;
-                            case 'heartbeat':
-                                log('Heartbeat received', 'heartbeat');
-                                break;
-                        }
-                    } catch (e) {
-                        log(`Received non-JSON message: ${event.data}`, 'raw');
-                    }
-                };
-
-                ws.onclose = function(event) {
-                    log(`WebSocket connection closed: ${event.code} - ${event.reason}`, 'warning');
-                    updateStatus(false);
-                };
-
-                ws.onerror = function(error) {
-                    log(`WebSocket error: ${error}`, 'error');
-                    updateStatus(false);
-                };
-
-            } catch (error) {
-                log(`Failed to connect: ${error}`, 'error');
-            }
+            ws.onopen = function(event) {
+                updateStatus('Connected', true);
+                addMessage('Connected to robot session', 'system');
+            };
+            
+            ws.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data);
+                    handleMessage(data);
+                } catch (e) {
+                    addMessage('Error parsing message: ' + event.data, 'error');
+                }
+            };
+            
+            ws.onclose = function(event) {
+                updateStatus('Disconnected', false);
+                addMessage('Connection closed', 'system');
+            };
+            
+            ws.onerror = function(error) {
+                addMessage('WebSocket error: ' + error, 'error');
+            };
         }
 
         function disconnect() {
             if (ws) {
                 ws.close();
                 ws = null;
-                updateStatus(false);
-                log('Disconnected');
             }
         }
 
-        function sendMessage(type, data) {
-            if (!ws || ws.readyState !== WebSocket.OPEN) {
-                log('Not connected', 'error');
-                return;
+        function updateStatus(text, connected) {
+            const statusDiv = document.getElementById('status');
+            statusDiv.textContent = text;
+            statusDiv.className = 'status ' + (connected ? 'connected' : 'disconnected');
+            
+            // Update button states
+            document.getElementById('connectBtn').disabled = connected;
+            document.getElementById('disconnectBtn').disabled = !connected;
+            document.getElementById('pingBtn').disabled = !connected;
+            document.getElementById('stopBtn').disabled = !connected;
+            document.getElementById('audioBtn').disabled = !connected;
+            document.getElementById('captureBtn').disabled = !connected;
+            document.getElementById('configBtn').disabled = !connected;
+        }
+
+        function sendMessage(message) {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify(message));
+                return true;
             }
-
-            const message = {
-                type: type,
-                data: data,
-                timestamp: new Date().toISOString()
-            };
-
-            ws.send(JSON.stringify(message));
-            log(`Sent: ${JSON.stringify(message, null, 2)}`, 'sent');
+            return false;
         }
 
         function sendPing() {
-            sendMessage('ping', {});
+            sendMessage({
+                type: 'ping',
+                timestamp: new Date().toISOString()
+            });
+        }
+
+        function sendTestAudio() {
+            // Send test audio data (base64 encoded or raw)
+            sendMessage({
+                type: 'audio_data',
+                data: 'test_audio_data_here', // In real implementation, this would be actual audio
+                timestamp: new Date().toISOString()
+            });
+            addMessage('Sent test audio data', 'sent');
+        }
+
+        function triggerCapture() {
+            // Trigger camera capture via API
+            fetch('/robot/capture', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                addMessage('Camera capture response: ' + JSON.stringify(data), 'api');
+            })
+            .catch(error => {
+                addMessage('Camera capture error: ' + error, 'error');
+            });
         }
 
         function sendConfig() {
             const videoFreq = document.getElementById('videoFreq').value;
-            const audioFreq = document.getElementById('audioFreq').value;
-            
-            sendMessage('config', {
-                video_frequency: videoFreq,
-                audio_frequency: audioFreq
+            sendMessage({
+                type: 'config',
+                data: {
+                    video_frequency: videoFreq
+                },
+                timestamp: new Date().toISOString()
             });
         }
 
-        // Auto-connect on page load (optional)
-        // window.addEventListener('load', connect);
+        function stopSession() {
+            sendMessage({
+                type: 'stop',
+                timestamp: new Date().toISOString()
+            });
+        }
+
+        function handleMessage(data) {
+            switch(data.type) {
+                case 'pong':
+                    addMessage('Received pong', 'received');
+                    break;
+                case 'transcript_interim':
+                    addMessage(`Interim transcript: "${data.data.transcript}"`, 'transcript');
+                    break;
+                case 'transcript_final':
+                    addMessage(`Final transcript: "${data.data.transcript}"`, 'transcript');
+                    break;
+                case 'interruption':
+                    addMessage(`Interruption: "${data.data.interruption}"`, 'transcript');
+                    break;
+                case 'intention_result':
+                    const intention = data.data;
+                    addMessage(`Intention detected: ${intention.has_clear_intention ? 'YES' : 'NO'} - ${intention.description} (confidence: ${intention.confidence})`, 'intention');
+                    break;
+                case 'video_analysis':
+                    addMessage(`Video analysis: ${JSON.stringify(data.data)}`, 'video');
+                    break;
+                case 'heartbeat':
+                    addMessage(`Heartbeat - Session: ${data.data.session_id}, Uptime: ${data.data.uptime}`, 'system');
+                    break;
+                case 'stop_confirmation':
+                    addMessage(`Session stopped: ${data.data.message}`, 'system');
+                    break;
+                default:
+                    addMessage(`Unknown message type: ${data.type} - ${JSON.stringify(data)}`, 'received');
+            }
+        }
+
+        function addMessage(text, type) {
+            const messagesDiv = document.getElementById('messages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${type}`;
+            messageDiv.innerHTML = `<strong>[${new Date().toLocaleTimeString()}]</strong> ${text}`;
+            messagesDiv.appendChild(messageDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        function clearMessages() {
+            document.getElementById('messages').innerHTML = '';
+        }
     </script>
 </body>
 </html>
