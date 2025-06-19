@@ -56,25 +56,23 @@ func (h *VideoHandler) run() {
 	h.session.Logger.Info("Video handler goroutine started", zap.Duration("frequency", h.session.VideoFrequency))
 
 	for h.isActive {
-		select {
-		case b64 := <-h.session.VideoAnalysisCh:
-			if b64 == models.SESSION_END {
-				h.session.Logger.Info("Video handler received SESSION_END")
-				return
-			}
-
-			// 1) Decode
-			imgBytes, err := base64.StdEncoding.DecodeString(b64)
-			if err != nil {
-				h.session.Logger.Error("failed to decode video_data", zap.Error(err))
-				continue
-			}
-
-			// 2) Send through your existing capture→analyze pipeline:
-			go h.captureAndAnalyze(imgBytes)
+		b64 := <-h.session.VideoAnalysisCh
+		if b64 == models.SESSION_END {
+			h.session.Logger.Info("Video handler received SESSION_END")
+			return
 		}
-		h.session.Logger.Info("Video handler goroutine stopped")
+
+		// 1) Decode
+		imgBytes, err := base64.StdEncoding.DecodeString(b64)
+		if err != nil {
+			h.session.Logger.Error("failed to decode video_data", zap.Error(err))
+			continue
+		}
+
+		// 2) Send through your existing capture→analyze pipeline:
+		go h.captureAndAnalyze(imgBytes)
 	}
+	h.session.Logger.Info("Video handler goroutine stopped")
 }
 
 func (h *VideoHandler) captureAndAnalyze(imageData []byte) {
