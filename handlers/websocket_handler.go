@@ -142,6 +142,10 @@ type WebSocketMessage struct {
 }
 
 func HandleRobotSession(w http.ResponseWriter, r *http.Request, redisClient *redis.Client) {
+	zap.L().Info("WebSocket upgrade request received",
+		zap.String("remote_addr", r.RemoteAddr),
+		zap.String("user_agent", r.UserAgent()))
+
 	// Upgrade HTTP connection to WebSocket
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -149,6 +153,8 @@ func HandleRobotSession(w http.ResponseWriter, r *http.Request, redisClient *red
 		return
 	}
 	defer conn.Close()
+
+	zap.L().Info("WebSocket connection upgraded successfully")
 
 	// Create new robot session
 	sessionID := uuid.New().String()
