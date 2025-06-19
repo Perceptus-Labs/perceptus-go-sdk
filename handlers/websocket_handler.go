@@ -244,7 +244,7 @@ func (rs *RoboSession) listenWebsocketMessages(conn *websocket.Conn) {
 
 			// Send confirmation back to client
 			stopMsg := WebSocketMessage{
-				Type: "stop_confirmation",
+				Type: "text",
 				Data: map[string]interface{}{
 					"session_id": rs.ID,
 					"message":    "Session stopped successfully",
