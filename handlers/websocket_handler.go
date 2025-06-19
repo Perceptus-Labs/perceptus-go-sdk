@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/Perceptus-Labs/perceptus-go-sdk/models"
@@ -42,6 +41,10 @@ type RoboSession struct {
 	// Current transcript buffer
 	CurrentTranscript string
 	LastActionTime    time.Time
+
+	VideoHandler     *VideoHandler
+	AudioHandler     *AudioHandler
+	IntentionHandler *IntentionHandler
 }
 
 var upgrader = websocket.Upgrader{
@@ -155,6 +158,8 @@ func HandleRobotSession(w http.ResponseWriter, r *http.Request, redisClient *red
 	session := NewRoboSession(sessionID, conn, redisClient)
 	session.Logger.Info("New robot session started")
 
+	intentionHandler := InitIntentionHandler(session)
+	session.IntentionHandler = intentionHandler
 	// Initialize handlers (they start their own goroutines)
 	audioHandler, err := InitAudioHandler(session)
 	if err != nil {
@@ -164,7 +169,9 @@ func HandleRobotSession(w http.ResponseWriter, r *http.Request, redisClient *red
 	}
 
 	videoHandler := InitVideoHandler(session)
-	intentionHandler := InitIntentionHandler(session)
+
+	session.VideoHandler = videoHandler
+	session.AudioHandler = audioHandler
 
 	// Start the main session orchestrator goroutine
 	go session.handleSessionOrchestrator(audioHandler, videoHandler, intentionHandler)
@@ -225,46 +232,6 @@ func (session *RoboSession) handleSessionOrchestrator(audioHandler *AudioHandler
 	// Start the main event loop
 	for session.IsActive {
 		select {
-		case transcript := <-session.TranscriptionCh:
-			if transcript == models.SESSION_END {
-				session.Logger.Info("Session orchestrator received SESSION_END")
-				return
-			}
-
-			session.Logger.Debug("Received transcript", zap.String("transcript", transcript))
-
-			if transcript == "<END_OF_SPEECH>" {
-				// Process the accumulated transcript for intention
-				if session.CurrentTranscript != "" {
-					session.Logger.Info("End of speech detected, processing transcript", zap.String("transcript", session.CurrentTranscript))
-
-					// Update context for new processing
-					session.UpdateContext()
-
-					// Send the final transcript to the client
-					session.sendWebSocketMessage("transcript_final", map[string]interface{}{
-						"transcript": session.CurrentTranscript,
-						"timestamp":  time.Now(),
-					})
-
-					// Process the complete transcript for intention analysis
-					intentionHandler.ProcessTranscript(session.CurrentTranscript)
-
-					// Reset transcript buffer
-					session.CurrentTranscript = ""
-				}
-			} else {
-				// Accumulate transcript (filter out empty/whitespace)
-				if strings.TrimSpace(transcript) != "" {
-					session.CurrentTranscript += transcript + " "
-
-					// Send interim transcript to client
-					session.sendWebSocketMessage("transcript_interim", map[string]interface{}{
-						"transcript": strings.TrimSpace(session.CurrentTranscript),
-						"timestamp":  time.Now(),
-					})
-				}
-			}
 
 		case intentionResult := <-session.IntentionCh:
 			session.Logger.Info("Received intention result",
