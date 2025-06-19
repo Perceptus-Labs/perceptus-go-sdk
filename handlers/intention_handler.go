@@ -130,6 +130,11 @@ func (h *IntentionHandler) getRelevantEnvironmentContext(ctx context.Context, tr
 	var contexts []string
 	for _, match := range queryResponse.Matches {
 		if match.Vector != nil && match.Vector.Metadata != nil {
+			if text, err := h.extractAvailablePineconeFields(match.Vector.Metadata, "timestamp"); err == nil {
+				if text != "" {
+					contexts = append(contexts, text)
+				}
+			}
 			if text, err := h.extractAvailablePineconeFields(match.Vector.Metadata, "overview"); err == nil {
 				if text != "" {
 					contexts = append(contexts, text)
