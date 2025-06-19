@@ -155,7 +155,6 @@ func HandleRobotSession(w http.ResponseWriter, r *http.Request, redisClient *red
 		zap.L().Error("Failed to upgrade to websocket", zap.Error(err))
 		return
 	}
-	defer conn.Close()
 
 	zap.L().Info("WebSocket connection upgraded successfully")
 
@@ -201,9 +200,6 @@ func HandleRobotSession(w http.ResponseWriter, r *http.Request, redisClient *red
 
 	// Handle incoming websocket messages
 	go session.listenWebsocketMessages(conn, audioHandler)
-
-	// The session will keep running until the WebSocket connection is closed
-	// or a stop command is received
 }
 
 func (session *RoboSession) listenWebsocketMessages(conn *websocket.Conn, audioHandler *AudioHandler) {
