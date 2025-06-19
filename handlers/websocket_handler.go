@@ -95,21 +95,23 @@ func (rs *RoboSession) UpdateContext() {
 
 func (rs *RoboSession) Stop() {
 	rs.Logger.Info("Stopping session")
-	rs.IsActive = false
+	if rs.IsActive {
+		rs.IsActive = false
 
-	// Send SESSION_END to all channels to stop all goroutines
-	rs.SendToAllChannels(models.SESSION_END)
+		// Send SESSION_END to all channels to stop all goroutines
+		rs.SendToAllChannels(models.SESSION_END)
 
-	// Cancel current context
-	rs.CancelCurrentContext()
+		// Cancel current context
+		rs.CancelCurrentContext()
 
-	// Close all channels
-	close(rs.TranscriptionCh)
-	close(rs.InterruptionCh)
-	close(rs.VideoAnalysisCh)
+		// Close all channels
+		close(rs.TranscriptionCh)
+		close(rs.InterruptionCh)
+		close(rs.VideoAnalysisCh)
 
-	if rs.Connection != nil {
-		rs.Connection.Close()
+		if rs.Connection != nil {
+			rs.Connection.Close()
+		}
 	}
 }
 
