@@ -231,25 +231,13 @@ func (session *RoboSession) handleSessionOrchestrator(audioHandler *AudioHandler
 
 	// Start the main event loop
 	for session.IsActive {
-		select {
-		case videoAnalysis := <-session.VideoAnalysisCh:
-			if videoAnalysis == models.SESSION_END {
-				session.Logger.Info("Session orchestrator received SESSION_END")
-				return
-			}
-
-			session.Logger.Debug("Received video analysis")
-			// Store environment context and send to client
-			session.sendWebSocketMessage("video_analysis", videoAnalysis)
-
-		case <-time.After(30 * time.Second):
-			// Periodic heartbeat
-			session.Logger.Debug("Session heartbeat")
-			session.sendWebSocketMessage("heartbeat", map[string]interface{}{
-				"session_id": session.ID,
-				"uptime":     time.Since(session.StartTime).String(),
-			})
-		}
+		time.Sleep(30 * time.Second)
+		// Periodic heartbeat
+		session.Logger.Debug("Session heartbeat")
+		session.sendWebSocketMessage("heartbeat", map[string]interface{}{
+			"session_id": session.ID,
+			"uptime":     time.Since(session.StartTime).String(),
+		})
 	}
 
 	// Cleanup handlers
