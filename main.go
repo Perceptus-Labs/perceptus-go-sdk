@@ -64,11 +64,6 @@ func main() {
 		handlers.HandleRobotSession(w, r, redisClient)
 	})
 
-	// API endpoint to trigger camera capture
-	http.HandleFunc("/robot/capture", func(w http.ResponseWriter, r *http.Request) {
-		handlers.HandleCameraCapture(w, r)
-	})
-
 	// Health check endpoint
 	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
