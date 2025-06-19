@@ -123,11 +123,27 @@ func (c *OpenAIClient) AnalyzeImageContext(ctx context.Context, imageData string
 	// 4) Build request body
 	payload := map[string]interface{}{
 		"model": "gpt-4o", // vision-enabled model
-		"messages": []map[string]string{
-			{"role": "system", "content": systemPrompt},
-			{"role": "user", "content": userPrompt},
+		"messages": []map[string]interface{}{
+			{
+				"role":    "system",
+				"content": systemPrompt,
+			},
+			{
+				"role": "user",
+				"content": []map[string]interface{}{
+					{
+						"type": "text",
+						"text": userPrompt,
+					},
+					{
+						"type": "image_url",
+						"image_url": map[string]string{
+							"url": dataURI,
+						},
+					},
+				},
+			},
 		},
-		"max_tokens": 500,
 	}
 
 	bodyBytes, err := json.Marshal(payload)
