@@ -176,7 +176,14 @@ func HandleRobotSession(w http.ResponseWriter, r *http.Request, redisClient *red
 	// Handle incoming websocket messages
 	go session.listenWebsocketMessages(conn, audioHandler)
 
-	// Send welcome message to client
+	// The session will keep running until the WebSocket connection is closed
+	// or a stop command is received
+}
+
+func (session *RoboSession) listenWebsocketMessages(conn *websocket.Conn, audioHandler *AudioHandler) {
+	session.Logger.Info("Starting WebSocket message listener")
+
+	// Send welcome message to client after listener is set up
 	welcomeMsg := WebSocketMessage{
 		Type: "welcome",
 		Data: map[string]interface{}{
@@ -188,14 +195,23 @@ func HandleRobotSession(w http.ResponseWriter, r *http.Request, redisClient *red
 	}
 	if err := conn.WriteJSON(welcomeMsg); err != nil {
 		session.Logger.Error("Failed to send welcome message", zap.Error(err))
+	} else {
+		session.Logger.Info("Welcome message sent successfully")
 	}
 
-	// The session will keep running until the WebSocket connection is closed
-	// or a stop command is received
-}
-
-func (session *RoboSession) listenWebsocketMessages(conn *websocket.Conn, audioHandler *AudioHandler) {
-	session.Logger.Info("Starting WebSocket message listener")
+	// Send a test ping after a short delay to verify connection
+	go func() {
+		time.Sleep(2 * time.Second)
+		pingMsg := WebSocketMessage{
+			Type:      "ping",
+			Timestamp: time.Now(),
+		}
+		if err := conn.WriteJSON(pingMsg); err != nil {
+			session.Logger.Error("Failed to send test ping", zap.Error(err))
+		} else {
+			session.Logger.Info("Test ping sent successfully")
+		}
+	}()
 
 	// Handle incoming websocket messages
 	for {
