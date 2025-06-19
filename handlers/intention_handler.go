@@ -41,23 +41,7 @@ func InitIntentionHandler(session *RoboSession) *IntentionHandler {
 
 	session.Logger.Info("Intention Handler initialized")
 
-	// Start the continuous intention processing goroutine
-	go intentionHandler.run()
-
 	return intentionHandler
-}
-
-func (h *IntentionHandler) run() {
-	h.session.Logger.Info("Intention handler goroutine started")
-
-	// The intention handler doesn't need to run continuously
-	// It will be called directly when there's a transcript to analyze
-	// Just wait for the session to end
-	for h.isActive {
-		time.Sleep(1 * time.Second)
-	}
-
-	h.session.Logger.Info("Intention handler goroutine stopped")
 }
 
 func (h *IntentionHandler) analyzeIntention(transcript string) {
@@ -76,14 +60,6 @@ func (h *IntentionHandler) analyzeIntention(transcript string) {
 		} else {
 			environmentContext = context
 		}
-	}
-
-	// Check if context was cancelled before proceeding with expensive API call
-	select {
-	case <-ctx.Done():
-		h.session.Logger.Debug("Context cancelled before intention analysis")
-		return
-	default:
 	}
 
 	// Analyze intention with OpenAI
@@ -154,8 +130,27 @@ func (h *IntentionHandler) getRelevantEnvironmentContext(ctx context.Context, tr
 	var contexts []string
 	for _, match := range queryResponse.Matches {
 		if match.Vector != nil && match.Vector.Metadata != nil {
-			if value, ok := match.Vector.Metadata.Fields["text"]; ok {
-				text := value.GetStringValue()
+			if text, err := h.extractAvailablePineconeFields(match.Vector.Metadata, "overview"); err == nil {
+				if text != "" {
+					contexts = append(contexts, text)
+				}
+			}
+			if text, err := h.extractAvailablePineconeFields(match.Vector.Metadata, "key_elements"); err == nil {
+				if text != "" {
+					contexts = append(contexts, text)
+				}
+			}
+			if text, err := h.extractAvailablePineconeFields(match.Vector.Metadata, "layout"); err == nil {
+				if text != "" {
+					contexts = append(contexts, text)
+				}
+			}
+			if text, err := h.extractAvailablePineconeFields(match.Vector.Metadata, "activities"); err == nil {
+				if text != "" {
+					contexts = append(contexts, text)
+				}
+			}
+			if text, err := h.extractAvailablePineconeFields(match.Vector.Metadata, "additional_info"); err == nil {
 				if text != "" {
 					contexts = append(contexts, text)
 				}
@@ -164,6 +159,16 @@ func (h *IntentionHandler) getRelevantEnvironmentContext(ctx context.Context, tr
 	}
 
 	return contexts, nil
+}
+
+func (h *IntentionHandler) extractAvailablePineconeFields(metadata *pinecone.Metadata, field string) (string, error) {
+	text := ""
+	if value, ok := metadata.Fields[field]; ok {
+		text = value.GetStringValue()
+	} else {
+		return "", fmt.Errorf("field not found in Pinecone metadata: %s", field)
+	}
+	return text, nil
 }
 
 func (h *IntentionHandler) notifyOrchestrator(result models.IntentionResult) {
