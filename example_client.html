@@ -105,6 +105,7 @@
     <script>
         let ws = null;
         let sessionId = null;
+        let pingInterval = null;
 
         function connect() {
             const wsUrl = `ws://localhost:8080/robot/session`;
@@ -115,12 +116,32 @@
                 console.log('WebSocket connection opened');
                 updateStatus('Connected', true);
                 addMessage('Connected to robot session', 'system');
+                
+                // Send a ping immediately to keep connection alive
+                setTimeout(() => {
+                    if (ws && ws.readyState === WebSocket.OPEN) {
+                        console.log('Sending initial ping');
+                        sendPing();
+                    }
+                }, 100);
+                
+                // Start periodic ping to keep connection alive
+                pingInterval = setInterval(() => {
+                    if (ws && ws.readyState === WebSocket.OPEN) {
+                        console.log('Sending periodic ping');
+                        sendPing();
+                    } else {
+                        console.log('Connection not open, clearing ping interval');
+                        clearInterval(pingInterval);
+                    }
+                }, 3000); // Ping every 3 seconds (more frequent)
             };
             
             ws.onmessage = function(event) {
                 console.log('Received message:', event.data);
                 try {
                     const data = JSON.parse(event.data);
+                    console.log('Parsed message:', data);
                     handleMessage(data);
                 } catch (e) {
                     console.error('Error parsing message:', e);
@@ -129,9 +150,15 @@
             };
             
             ws.onclose = function(event) {
-                console.log('WebSocket connection closed:', event.code, event.reason);
+                console.log('WebSocket connection closed:', event.code, event.reason, 'wasClean:', event.wasClean);
                 updateStatus('Disconnected', false);
-                addMessage(`Connection closed (code: ${event.code}, reason: ${event.reason})`, 'system');
+                addMessage(`Connection closed (code: ${event.code}, reason: ${event.reason}, clean: ${event.wasClean})`, 'system');
+                
+                // Clear ping interval
+                if (pingInterval) {
+                    clearInterval(pingInterval);
+                    pingInterval = null;
+                }
             };
             
             ws.onerror = function(error) {
@@ -141,6 +168,10 @@
         }
 
         function disconnect() {
+            if (pingInterval) {
+                clearInterval(pingInterval);
+                pingInterval = null;
+            }
             if (ws) {
                 ws.close();
                 ws = null;

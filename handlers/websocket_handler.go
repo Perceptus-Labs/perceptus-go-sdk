@@ -164,9 +164,10 @@ func HandleRobotSession(w http.ResponseWriter, r *http.Request, redisClient *red
 	session := NewRoboSession(sessionID, conn, redisClient)
 	session.Logger.Info("New robot session started")
 
+	// Initialize handlers
 	intentionHandler := InitIntentionHandler(session)
 	session.IntentionHandler = intentionHandler
-	// Initialize handlers (they start their own goroutines)
+
 	audioHandler, err := InitAudioHandler(session)
 	if err != nil {
 		session.Logger.Error("Failed to initialize audio handler", zap.Error(err))
@@ -179,20 +180,7 @@ func HandleRobotSession(w http.ResponseWriter, r *http.Request, redisClient *red
 	session.VideoHandler = videoHandler
 	session.AudioHandler = audioHandler
 
-	// Start the main session orchestrator goroutine
-	go session.handleSessionOrchestrator(audioHandler, videoHandler, intentionHandler)
-
-	// Handle incoming websocket messages
-	go session.listenWebsocketMessages(conn, audioHandler)
-
-	// The session will keep running until the WebSocket connection is closed
-	// or a stop command is received
-}
-
-func (session *RoboSession) listenWebsocketMessages(conn *websocket.Conn, audioHandler *AudioHandler) {
-	session.Logger.Info("Starting WebSocket message listener")
-
-	// Send welcome message to client after listener is set up
+	// Send welcome message immediately after upgrade (before starting message listener)
 	welcomeMsg := WebSocketMessage{
 		Type: "welcome",
 		Data: map[string]interface{}{
@@ -208,19 +196,18 @@ func (session *RoboSession) listenWebsocketMessages(conn *websocket.Conn, audioH
 		session.Logger.Info("Welcome message sent successfully")
 	}
 
-	// Send a test ping after a short delay to verify connection
-	go func() {
-		time.Sleep(2 * time.Second)
-		pingMsg := WebSocketMessage{
-			Type:      "ping",
-			Timestamp: time.Now(),
-		}
-		if err := conn.WriteJSON(pingMsg); err != nil {
-			session.Logger.Error("Failed to send test ping", zap.Error(err))
-		} else {
-			session.Logger.Info("Test ping sent successfully")
-		}
-	}()
+	// Start the main session orchestrator goroutine
+	go session.handleSessionOrchestrator(audioHandler, videoHandler, intentionHandler)
+
+	// Handle incoming websocket messages
+	go session.listenWebsocketMessages(conn, audioHandler)
+
+	// The session will keep running until the WebSocket connection is closed
+	// or a stop command is received
+}
+
+func (session *RoboSession) listenWebsocketMessages(conn *websocket.Conn, audioHandler *AudioHandler) {
+	session.Logger.Info("Starting WebSocket message listener")
 
 	// Handle incoming websocket messages
 	for {
