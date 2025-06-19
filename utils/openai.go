@@ -102,7 +102,7 @@ Be conservative - only mark as clear intention if the user is explicitly asking 
 	}
 
 	requestBody := map[string]interface{}{
-		"model":    "gpt-4.1-2025-04-14",
+		"model":    "gpt-4.1-nano-2025-04-14",
 		"messages": messages,
 	}
 
@@ -127,7 +127,7 @@ func (c *OpenAIClient) AnalyzeImageContext(ctx context.Context, imageData string
 
 	// 4) Build request body
 	payload := map[string]interface{}{
-		"model": "gpt-4o", // vision-enabled model
+		"model": "gpt-4.1-nano-2025-04-14", // vision-enabled model
 		"messages": []map[string]interface{}{
 			{
 				"role":    "system",
