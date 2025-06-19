@@ -3,7 +3,9 @@ package handlers
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"time"
@@ -306,31 +308,33 @@ func (rs *RoboSession) handleAudioData(audioHandler *AudioHandler, data interfac
 	// Handle audio data similar to Twilio media events
 	rs.Logger.Debug("Received audio data")
 
-	// Extract audio data from the message
-	// Assuming the data comes as base64 encoded audio or raw bytes
-	var audioBytes []byte
-
-	switch v := data.(type) {
-	case string:
-		// If it's a base64 encoded string, decode it
-		// This would need proper base64 decoding in real implementation
-		rs.Logger.Debug("Received audio data as string", zap.Int("length", len(v)))
-		audioBytes = []byte(v) // Simplified - in reality you'd base64 decode
-	case []byte:
-		audioBytes = v
-	case map[string]interface{}:
-		// If it's a structured message like Twilio's media event
-		if payload, ok := v["payload"].(string); ok {
-			audioBytes = []byte(payload) // Again, would need proper decoding
-		}
-	default:
-		rs.Logger.Warn("Unknown audio data format")
+	audioBytes, err := rs.extractAudioBytes(data)
+	if err != nil {
+		rs.Logger.Warn("Unable to extract audio bytes", zap.Error(err))
 		return
 	}
 
-	// Send audio data to the audio handler for processing
+	// Hand off to the audio handler
 	if err := audioHandler.ProcessAudioData(audioBytes); err != nil {
 		rs.Logger.Error("Failed to process audio data", zap.Error(err))
+	}
+}
+
+func (rs *RoboSession) extractAudioBytes(data interface{}) ([]byte, error) {
+	switch v := data.(type) {
+	case []byte:
+		return v, nil
+
+	case string:
+		// assume base64-encoded audio
+		decoded, err := base64.StdEncoding.DecodeString(v)
+		if err != nil {
+			return nil, fmt.Errorf("base64 decode string: %w", err)
+		}
+		return decoded, nil
+
+	default:
+		return nil, fmt.Errorf("unsupported data type %T", data)
 	}
 }
 

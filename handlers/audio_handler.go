@@ -20,7 +20,7 @@ func InitAudioHandler(session *RoboSession) (*AudioHandler, error) {
 	// Initialize Deepgram client with default settings
 	deepgramClient := utils.InitDeepgramClient(
 		"en",  // Default language
-		"0.6", // Default confidence threshold
+		"0.3", // Default confidence threshold
 		session.TranscriptionCh,
 	)
 
@@ -88,10 +88,6 @@ func (h *AudioHandler) handleTranscript() {
 
 // ProcessAudioData sends audio data directly to Deepgram (called from WebSocket handler)
 func (h *AudioHandler) ProcessAudioData(audioData []byte) error {
-	if !h.isActive {
-		return nil
-	}
-
 	// Send audio data to Deepgram immediately
 	err := h.deepgramClient.Send(audioData)
 	if err != nil {
