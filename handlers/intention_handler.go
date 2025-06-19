@@ -105,7 +105,7 @@ func (h *IntentionHandler) analyzeIntention(transcript string) {
 	}
 
 	// Parse the intention result
-	hasIntention, intentionType, description, confidence := h.parseIntentionResponse(intention)
+	hasIntention, intentionType, description, confidence := intention.HasClearIntention, intention.IntentionType, intention.Description, intention.Confidence
 
 	// Create intention result
 	result := models.IntentionResult{
@@ -114,7 +114,6 @@ func (h *IntentionHandler) analyzeIntention(transcript string) {
 		Description:        description,
 		Confidence:         confidence,
 		EnvironmentContext: strings.Join(environmentContext, "\n"),
-		TranscriptAnalysis: intention,
 		Timestamp:          time.Now(),
 	}
 
@@ -172,50 +171,6 @@ func (h *IntentionHandler) getRelevantEnvironmentContext(ctx context.Context, tr
 	}
 
 	return contexts, nil
-}
-
-func (h *IntentionHandler) parseIntentionResponse(response string) (bool, string, string, float64) {
-	// Simple parsing of OpenAI response
-	// This could be made more sophisticated with structured output
-
-	response = strings.ToLower(response)
-
-	// Check for clear intention indicators
-	clearIntentionKeywords := []string{
-		"clear intention", "definite intention", "specific request", "clear request",
-		"wants to", "needs to", "asks for", "requests", "commands",
-	}
-
-	hasIntention := false
-	for _, keyword := range clearIntentionKeywords {
-		if strings.Contains(response, keyword) {
-			hasIntention = true
-			break
-		}
-	}
-
-	// Extract intention type
-	intentionType := "general"
-	if strings.Contains(response, "move") || strings.Contains(response, "go") {
-		intentionType = "movement"
-	} else if strings.Contains(response, "get") || strings.Contains(response, "fetch") {
-		intentionType = "retrieval"
-	} else if strings.Contains(response, "turn on") || strings.Contains(response, "turn off") {
-		intentionType = "control"
-	} else if strings.Contains(response, "help") || strings.Contains(response, "assist") {
-		intentionType = "assistance"
-	}
-
-	// Simple confidence calculation based on response clarity
-	confidence := 0.5 // Default
-	if hasIntention {
-		confidence = 0.8
-		if strings.Contains(response, "very clear") || strings.Contains(response, "definite") {
-			confidence = 0.9
-		}
-	}
-
-	return hasIntention, intentionType, response, confidence
 }
 
 func (h *IntentionHandler) notifyOrchestrator(result models.IntentionResult) {

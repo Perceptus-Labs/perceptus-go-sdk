@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Perceptus-Labs/perceptus-go-sdk/models"
 	"go.uber.org/zap"
 )
 
@@ -53,7 +54,7 @@ func NewOpenAIClient() *OpenAIClient {
 	}
 }
 
-func (c *OpenAIClient) AnalyzeImage(ctx context.Context, imageData []byte, prompt string) (string, error) {
+func (c *OpenAIClient) AnalyzeImage(ctx context.Context, imageData []byte, prompt string) (*models.IntentionResult, error) {
 	// Convert image to base64
 	base64Image := base64.StdEncoding.EncodeToString(imageData)
 	imageURL := fmt.Sprintf("data:image/jpeg;base64,%s", base64Image)
@@ -90,7 +91,7 @@ func (c *OpenAIClient) AnalyzeImage(ctx context.Context, imageData []byte, promp
 	return c.sendRequest(ctx, requestBody)
 }
 
-func (c *OpenAIClient) AnalyzeTranscriptForIntention(ctx context.Context, transcript string, environmentContext []string) (string, error) {
+func (c *OpenAIClient) AnalyzeTranscriptForIntention(ctx context.Context, transcript string, environmentContext []string) (*models.IntentionResult, error) {
 	contextStr := ""
 	if len(environmentContext) > 0 {
 		contextStr = "Current environment context:\n" + strings.Join(environmentContext, "\n") + "\n\n"
@@ -119,6 +120,16 @@ Examples of unclear/no intentions:
 - "What time is it?"
 - General conversation without specific requests
 
+Return the JSON object only, no other text.
+Return in the following format:
+{
+	"has_clear_intention": boolean,
+	"intention_type": string,
+	"description": string,
+	"confidence": float,
+	"reasoning": string
+}
+
 Be conservative - only mark as clear intention if the user is explicitly asking the robot to do something specific.`, contextStr, transcript)
 
 	messages := []GPTMessage{
@@ -129,15 +140,14 @@ Be conservative - only mark as clear intention if the user is explicitly asking 
 	}
 
 	requestBody := map[string]interface{}{
-		"model":      "gpt-4o-mini",
-		"messages":   messages,
-		"max_tokens": 500,
+		"model":    "gpt-4.1-2025-04-14",
+		"messages": messages,
 	}
 
 	return c.sendRequest(ctx, requestBody)
 }
 
-func (c *OpenAIClient) GenerateEnvironmentDescription(ctx context.Context, imageData []byte) (string, error) {
+func (c *OpenAIClient) GenerateEnvironmentDescription(ctx context.Context, imageData []byte) (*models.IntentionResult, error) {
 	prompt := `Analyze this image and provide a detailed description of the environment for a robot assistant. Focus on:
 
 1. Key objects and their locations (be specific about positioning)
@@ -160,15 +170,15 @@ Example format:
 	return c.AnalyzeImage(ctx, imageData, prompt)
 }
 
-func (c *OpenAIClient) sendRequest(ctx context.Context, requestBody map[string]interface{}) (string, error) {
+func (c *OpenAIClient) sendRequest(ctx context.Context, requestBody map[string]interface{}) (*models.IntentionResult, error) {
 	requestBodyBytes, err := json.Marshal(requestBody)
 	if err != nil {
-		return "", fmt.Errorf("failed to marshal request body: %w", err)
+		return nil, fmt.Errorf("failed to marshal request body: %w", err)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, "POST", "https://api.openai.com/v1/chat/completions", bytes.NewBuffer(requestBodyBytes))
 	if err != nil {
-		return "", fmt.Errorf("failed to create HTTP request: %w", err)
+		return nil, fmt.Errorf("failed to create HTTP request: %w", err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
@@ -176,27 +186,33 @@ func (c *OpenAIClient) sendRequest(ctx context.Context, requestBody map[string]i
 
 	resp, err := c.Client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("failed to send HTTP request: %w", err)
+		return nil, fmt.Errorf("failed to send HTTP request: %w", err)
 	}
 	defer resp.Body.Close()
 
 	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", fmt.Errorf("failed to read response body: %w", err)
+		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("OpenAI API returned status %d: %s", resp.StatusCode, string(bodyBytes))
+		return nil, fmt.Errorf("OpenAI API returned status %d: %s", resp.StatusCode, string(bodyBytes))
 	}
 
 	var response GPTResponse
 	if err := json.Unmarshal(bodyBytes, &response); err != nil {
-		return "", fmt.Errorf("failed to unmarshal response JSON: %w", err)
+		return nil, fmt.Errorf("failed to unmarshal response JSON: %w", err)
 	}
 
 	if len(response.Choices) == 0 {
-		return "", fmt.Errorf("no choices in OpenAI API response")
+		return nil, fmt.Errorf("no choices in OpenAI API response")
 	}
 
-	return response.Choices[0].Message.Content, nil
+	// Parse the response
+	var intentionResult models.IntentionResult
+	if err := json.Unmarshal([]byte(response.Choices[0].Message.Content), &intentionResult); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal intention result: %w", err)
+	}
+
+	return &intentionResult, nil
 }

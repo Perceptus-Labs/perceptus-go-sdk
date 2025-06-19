@@ -102,19 +102,19 @@ func (h *VideoHandler) captureAndAnalyze() {
 	}
 
 	// Analyze image with OpenAI GPT-4V
-	description, err := h.openaiClient.GenerateEnvironmentDescription(ctx, imageData)
+	intentionResult, err := h.openaiClient.GenerateEnvironmentDescription(ctx, imageData)
 	if err != nil {
 		h.session.Logger.Error("Failed to analyze image", zap.Error(err))
 		return
 	}
 
-	h.session.Logger.Debug("Generated environment description", zap.String("description", description))
+	h.session.Logger.Debug("Generated environment description", zap.String("description", intentionResult.Description))
 
 	// Create environment context
 	envContext := models.EnvironmentContext{
 		ID:          fmt.Sprintf("%s-%d", h.session.ID, time.Now().Unix()),
 		SessionID:   h.session.ID,
-		Description: description,
+		Description: intentionResult.Description,
 		Timestamp:   time.Now(),
 		ImageData:   imageData,
 	}
@@ -122,8 +122,8 @@ func (h *VideoHandler) captureAndAnalyze() {
 	// Create video analysis result
 	analysis := models.VideoAnalysis{
 		SessionID:          h.session.ID,
-		Description:        description,
-		EnvironmentSummary: description,
+		Description:        intentionResult.Description,
+		EnvironmentSummary: intentionResult.Description,
 		Timestamp:          time.Now(),
 	}
 
@@ -176,26 +176,26 @@ Focus on identifying:
 Provide a detailed but concise description focusing on elements that would be most relevant to understanding what the user wants or is talking about.`, transcript)
 
 	// Analyze with OpenAI
-	description, err := h.openaiClient.AnalyzeImage(ctx, imageData, prompt)
+	intentionResult, err := h.openaiClient.AnalyzeImage(ctx, imageData, prompt)
 	if err != nil {
 		return "", fmt.Errorf("failed to analyze image: %w", err)
 	}
 
-	h.session.Logger.Debug("Generated contextual environment description")
+	h.session.Logger.Debug("Generated contextual environment description", zap.String("description", intentionResult.Description))
 
 	// Store this context in Pinecone as well (async)
 	if h.pineconeIdx != nil {
 		envContext := models.EnvironmentContext{
 			ID:          fmt.Sprintf("%s-context-%d", h.session.ID, time.Now().Unix()),
 			SessionID:   h.session.ID,
-			Description: fmt.Sprintf("Context for transcript: '%s' - %s", transcript, description),
+			Description: fmt.Sprintf("Context for transcript: '%s' - %s", transcript, intentionResult.Description),
 			Timestamp:   time.Now(),
 			ImageData:   imageData,
 		}
 		go h.storeEnvironmentContext(envContext)
 	}
 
-	return description, nil
+	return intentionResult.Description, nil
 }
 
 func (h *VideoHandler) storeEnvironmentContext(envContext models.EnvironmentContext) {
