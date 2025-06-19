@@ -144,6 +144,22 @@ type WebSocketMessage struct {
 	Timestamp time.Time   `json:"timestamp"`
 }
 
+func (rs *RoboSession) setupHandlers() {
+	intentionHandler := InitIntentionHandler(rs)
+	rs.IntentionHandler = intentionHandler
+
+	audioHandler, err := InitAudioHandler(rs)
+	if err != nil {
+		rs.Logger.Error("Failed to initialize audio handler", zap.Error(err))
+		rs.Stop()
+		return
+	}
+	rs.AudioHandler = audioHandler
+
+	videoHandler := InitVideoHandler(rs)
+	rs.VideoHandler = videoHandler
+}
+
 func HandleRobotSession(w http.ResponseWriter, r *http.Request, redisClient *redis.Client) {
 	zap.L().Info("WebSocket upgrade request received",
 		zap.String("remote_addr", r.RemoteAddr),
@@ -163,25 +179,12 @@ func HandleRobotSession(w http.ResponseWriter, r *http.Request, redisClient *red
 	session := NewRoboSession(sessionID, conn, redisClient)
 	session.Logger.Info("New robot session started")
 
-	// Initialize handlers
-	intentionHandler := InitIntentionHandler(session)
-	session.IntentionHandler = intentionHandler
-
-	audioHandler, err := InitAudioHandler(session)
-	if err != nil {
-		session.Logger.Error("Failed to initialize audio handler", zap.Error(err))
-		session.Stop()
-		return
-	}
-
-	videoHandler := InitVideoHandler(session)
-
-	session.VideoHandler = videoHandler
-	session.AudioHandler = audioHandler
+	// Setup handlers
+	session.setupHandlers()
 
 	// Send welcome message immediately after upgrade (before starting message listener)
 	welcomeMsg := WebSocketMessage{
-		Type: "welcome",
+		Type: "text",
 		Data: map[string]interface{}{
 			"session_id": session.ID,
 			"message":    "Robot session started successfully",
@@ -189,21 +192,19 @@ func HandleRobotSession(w http.ResponseWriter, r *http.Request, redisClient *red
 		},
 		Timestamp: time.Now(),
 	}
+
 	if err := conn.WriteJSON(welcomeMsg); err != nil {
 		session.Logger.Error("Failed to send welcome message", zap.Error(err))
 	} else {
 		session.Logger.Info("Welcome message sent successfully")
 	}
 
-	// Start the main session orchestrator goroutine
-	go session.handleSessionOrchestrator(audioHandler, videoHandler, intentionHandler)
-
 	// Handle incoming websocket messages
-	go session.listenWebsocketMessages(conn, audioHandler)
+	go session.listenWebsocketMessages(conn)
 }
 
-func (session *RoboSession) listenWebsocketMessages(conn *websocket.Conn, audioHandler *AudioHandler) {
-	session.Logger.Info("Starting WebSocket message listener")
+func (rs *RoboSession) listenWebsocketMessages(conn *websocket.Conn) {
+	rs.Logger.Info("Starting WebSocket message listener")
 
 	// Handle incoming websocket messages
 	for {
@@ -211,55 +212,18 @@ func (session *RoboSession) listenWebsocketMessages(conn *websocket.Conn, audioH
 		var msg WebSocketMessage
 		err := conn.ReadJSON(&msg)
 		if err != nil {
-			// If JSON parsing fails, try to read as raw message
-			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				session.Logger.Error("WebSocket connection closed unexpectedly", zap.Error(err))
-			} else if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
-				session.Logger.Info("WebSocket connection closed normally")
-			} else {
-				session.Logger.Warn("Failed to read JSON message, trying raw message", zap.Error(err))
-
-				// Try to read as raw message
-				messageType, message, readErr := conn.ReadMessage()
-				if readErr != nil {
-					if websocket.IsUnexpectedCloseError(readErr, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-						session.Logger.Error("WebSocket error reading raw message", zap.Error(readErr))
-					}
-					break
-				}
-
-				// Handle raw message
-				session.Logger.Debug("Received raw message", zap.Int("type", messageType), zap.String("message", string(message)))
-
-				// If it's a text message, try to parse as JSON
-				if messageType == websocket.TextMessage {
-					if jsonErr := json.Unmarshal(message, &msg); jsonErr == nil {
-						// Successfully parsed as JSON, continue with normal handling
-					} else {
-						// Treat as raw text message
-						session.Logger.Debug("Received text message", zap.String("content", string(message)))
-						continue
-					}
-				} else if messageType == websocket.BinaryMessage {
-					// Handle binary message (likely audio data)
-					session.Logger.Debug("Received binary message", zap.Int("size", len(message)))
-					if err := audioHandler.ProcessAudioData(message); err != nil {
-						session.Logger.Error("Failed to process binary audio data", zap.Error(err))
-					}
-					continue
-				}
-			}
+			rs.Logger.Error("Failed to read JSON message", zap.Error(err))
 			break
 		}
 
-		session.Logger.Debug("Received WebSocket message", zap.String("type", msg.Type))
+		rs.Logger.Debug("Received WebSocket message", zap.String("type", msg.Type))
 
 		// Handle different message types
 		switch msg.Type {
 		case "config":
-			session.handleConfigMessage(msg.Data)
+			rs.handleConfigMessage(msg.Data)
 		case "audio_data":
-			session.handleAudioData(audioHandler, msg.Data)
+			rs.handleAudioData(rs.AudioHandler, msg.Data)
 		case "ping":
 			// Send pong response
 			pongMsg := WebSocketMessage{
@@ -267,67 +231,46 @@ func (session *RoboSession) listenWebsocketMessages(conn *websocket.Conn, audioH
 				Timestamp: time.Now(),
 			}
 			if err := conn.WriteJSON(pongMsg); err != nil {
-				session.Logger.Error("Failed to send pong", zap.Error(err))
+				rs.Logger.Error("Failed to send pong", zap.Error(err))
 			}
 		case "stop":
-			session.Logger.Info("Received stop command from client")
+			rs.Logger.Info("Received stop command from client")
 
 			// Send SESSION_END to all channels to stop all goroutines
-			session.SendToAllChannels(models.SESSION_END)
+			rs.SendToAllChannels(models.SESSION_END)
 
 			// Stop the session
-			session.Stop()
+			rs.Stop()
 
 			// Send confirmation back to client
 			stopMsg := WebSocketMessage{
 				Type: "stop_confirmation",
 				Data: map[string]interface{}{
-					"session_id": session.ID,
+					"session_id": rs.ID,
 					"message":    "Session stopped successfully",
 				},
 				Timestamp: time.Now(),
 			}
 			if err := conn.WriteJSON(stopMsg); err != nil {
-				session.Logger.Error("Failed to send stop confirmation", zap.Error(err))
+				rs.Logger.Error("Failed to send stop confirmation", zap.Error(err))
 			}
 
 			return
 		default:
-			session.Logger.Warn("Unknown message type", zap.String("type", msg.Type))
+			rs.Logger.Warn("Unknown message type", zap.String("type", msg.Type))
 		}
 	}
 
 	// Connection closed, stop the session
-	session.Logger.Info("WebSocket connection closed, stopping session")
-	session.SendToAllChannels(models.SESSION_END)
-	session.Stop()
+	rs.Logger.Info("WebSocket connection closed, stopping session")
+	rs.SendToAllChannels(models.SESSION_END)
+	rs.Stop()
 }
 
-func (session *RoboSession) handleSessionOrchestrator(audioHandler *AudioHandler, videoHandler *VideoHandler, intentionHandler *IntentionHandler) {
-	session.Logger.Info("Session orchestrator started")
-
-	// Start the main event loop
-	for session.IsActive {
-		time.Sleep(30 * time.Second)
-		// Periodic heartbeat
-		session.Logger.Debug("Session heartbeat")
-		// session.sendWebSocketMessage("heartbeat", map[string]interface{}{
-		// 	"session_id": session.ID,
-		// 	"uptime":     time.Since(session.StartTime).String(),
-		// })
-	}
-
-	// Cleanup handlers
-	session.Logger.Info("Cleaning up handlers")
-	audioHandler.Close()
-	videoHandler.Close()
-	intentionHandler.Close()
-}
-
-func (session *RoboSession) handleConfigMessage(data interface{}) {
+func (rs *RoboSession) handleConfigMessage(data interface{}) {
 	configData, ok := data.(map[string]interface{})
 	if !ok {
-		session.Logger.Error("Invalid config data format")
+		rs.Logger.Error("Invalid config data format")
 		return
 	}
 
@@ -335,8 +278,8 @@ func (session *RoboSession) handleConfigMessage(data interface{}) {
 	if videoFreq, exists := configData["video_frequency"]; exists {
 		if freqStr, ok := videoFreq.(string); ok {
 			if duration, err := time.ParseDuration(freqStr); err == nil {
-				session.VideoFrequency = duration
-				session.Logger.Info("Updated video frequency", zap.Duration("frequency", duration))
+				rs.VideoFrequency = duration
+				rs.Logger.Info("Updated video frequency", zap.Duration("frequency", duration))
 			}
 		}
 	}
@@ -345,8 +288,8 @@ func (session *RoboSession) handleConfigMessage(data interface{}) {
 	if audioFreq, exists := configData["audio_frequency"]; exists {
 		if freqStr, ok := audioFreq.(string); ok {
 			if duration, err := time.ParseDuration(freqStr); err == nil {
-				session.AudioFrequency = duration
-				session.Logger.Info("Updated audio frequency", zap.Duration("frequency", duration))
+				rs.AudioFrequency = duration
+				rs.Logger.Info("Updated audio frequency", zap.Duration("frequency", duration))
 			}
 		}
 	}
@@ -357,9 +300,9 @@ func (session *RoboSession) handleConfigMessage(data interface{}) {
 	// })
 }
 
-func (session *RoboSession) handleAudioData(audioHandler *AudioHandler, data interface{}) {
+func (rs *RoboSession) handleAudioData(audioHandler *AudioHandler, data interface{}) {
 	// Handle audio data similar to Twilio media events
-	session.Logger.Debug("Received audio data")
+	rs.Logger.Debug("Received audio data")
 
 	// Extract audio data from the message
 	// Assuming the data comes as base64 encoded audio or raw bytes
@@ -369,7 +312,7 @@ func (session *RoboSession) handleAudioData(audioHandler *AudioHandler, data int
 	case string:
 		// If it's a base64 encoded string, decode it
 		// This would need proper base64 decoding in real implementation
-		session.Logger.Debug("Received audio data as string", zap.Int("length", len(v)))
+		rs.Logger.Debug("Received audio data as string", zap.Int("length", len(v)))
 		audioBytes = []byte(v) // Simplified - in reality you'd base64 decode
 	case []byte:
 		audioBytes = v
@@ -379,13 +322,13 @@ func (session *RoboSession) handleAudioData(audioHandler *AudioHandler, data int
 			audioBytes = []byte(payload) // Again, would need proper decoding
 		}
 	default:
-		session.Logger.Warn("Unknown audio data format")
+		rs.Logger.Warn("Unknown audio data format")
 		return
 	}
 
 	// Send audio data to the audio handler for processing
 	if err := audioHandler.ProcessAudioData(audioBytes); err != nil {
-		session.Logger.Error("Failed to process audio data", zap.Error(err))
+		rs.Logger.Error("Failed to process audio data", zap.Error(err))
 	}
 }
 
@@ -402,13 +345,13 @@ func (session *RoboSession) handleAudioData(audioHandler *AudioHandler, data int
 // 	}
 // }
 
-func triggerOrchestrator(session *RoboSession, intention models.IntentionResult) {
-	session.Logger.Info("Triggering orchestrator", zap.Any("intention", intention))
+func triggerOrchestrator(rs *RoboSession, intention models.IntentionResult) {
+	rs.Logger.Info("Triggering orchestrator", zap.Any("intention", intention))
 	orchestratorEndpoint := os.Getenv("ORCHESTRATOR_ENDPOINT")
 	apiKey := os.Getenv("ORCHESTRATOR_API_KEY")
 
 	if orchestratorEndpoint == "" || apiKey == "" {
-		session.Logger.Error("Orchestrator endpoint or API key not configured")
+		rs.Logger.Error("Orchestrator endpoint or API key not configured")
 		return
 	}
 
@@ -418,7 +361,7 @@ func triggerOrchestrator(session *RoboSession, intention models.IntentionResult)
 
 	// Prepare the payload
 	payload := map[string]interface{}{
-		"session_id":          session.ID,
+		"session_id":          rs.ID,
 		"intention":           intention,
 		"environment_context": intention.EnvironmentContext,
 		"timestamp":           time.Now(),
@@ -426,7 +369,7 @@ func triggerOrchestrator(session *RoboSession, intention models.IntentionResult)
 
 	payloadBytes, err := json.Marshal(payload)
 	if err != nil {
-		session.Logger.Error("Failed to marshal orchestrator payload", zap.Error(err))
+		rs.Logger.Error("Failed to marshal orchestrator payload", zap.Error(err))
 		return
 	}
 
@@ -435,7 +378,7 @@ func triggerOrchestrator(session *RoboSession, intention models.IntentionResult)
 	req, err := http.NewRequestWithContext(ctx, "POST", orchestratorEndpoint,
 		bytes.NewBuffer(payloadBytes))
 	if err != nil {
-		session.Logger.Error("Failed to create orchestrator request", zap.Error(err))
+		rs.Logger.Error("Failed to create orchestrator request", zap.Error(err))
 		return
 	}
 
@@ -444,14 +387,14 @@ func triggerOrchestrator(session *RoboSession, intention models.IntentionResult)
 
 	resp, err := client.Do(req)
 	if err != nil {
-		session.Logger.Error("Failed to call orchestrator", zap.Error(err))
+		rs.Logger.Error("Failed to call orchestrator", zap.Error(err))
 		return
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusOK {
-		session.Logger.Info("Successfully triggered orchestrator")
-		session.LastActionTime = time.Now()
+		rs.Logger.Info("Successfully triggered orchestrator")
+		rs.LastActionTime = time.Now()
 
 		// Notify client of successful orchestrator trigger
 		// session.sendWebSocketMessage("orchestrator_triggered", map[string]interface{}{
@@ -460,7 +403,7 @@ func triggerOrchestrator(session *RoboSession, intention models.IntentionResult)
 		// 	"timestamp":  time.Now(),
 		// })
 	} else {
-		session.Logger.Error("Orchestrator returned error status", zap.Int("status", resp.StatusCode))
+		rs.Logger.Error("Orchestrator returned error status", zap.Int("status", resp.StatusCode))
 	}
 }
 
