@@ -69,12 +69,6 @@ func (h *VideoHandler) run() {
 		case <-ticker.C:
 			// Periodic video capture and analysis
 			go h.captureAndAnalyze()
-
-		case <-h.session.CurrentContext.Done():
-			h.session.Logger.Debug("Video handler context cancelled")
-			// Add a small delay to prevent infinite loop
-			time.Sleep(100 * time.Millisecond)
-			// Check if we should still be active
 		}
 	}
 
