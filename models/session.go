@@ -21,7 +21,6 @@ type EnvironmentContext struct {
 	ID             string            `json:"id" optional:"true"`
 	SessionID      string            `json:"session_id" optional:"true"`
 	Timestamp      time.Time         `json:"timestamp" optional:"true"`
-	ImageData      []byte            `json:"image_data" optional:"true"`
 	Overview       string            `json:"overview" optional:"true"`
 	KeyElements    []string          `json:"key_elements" optional:"true"`
 	Layout         string            `json:"layout" optional:"true"`

@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"encoding/base64"
 	"fmt"
 	"time"
 
@@ -61,21 +60,12 @@ func (h *VideoHandler) run() {
 			h.session.Logger.Info("Video handler received SESSION_END")
 			return
 		}
-
-		// 1) Decode
-		imgBytes, err := base64.StdEncoding.DecodeString(b64)
-		if err != nil {
-			h.session.Logger.Error("failed to decode video_data", zap.Error(err))
-			continue
-		}
-
-		// 2) Send through your existing capture→analyze pipeline:
-		go h.captureAndAnalyze(imgBytes)
+		go h.captureAndAnalyze(b64)
 	}
 	h.session.Logger.Info("Video handler goroutine stopped")
 }
 
-func (h *VideoHandler) captureAndAnalyze(imageData []byte) {
+func (h *VideoHandler) captureAndAnalyze(imageData string) {
 	// Create a new context with timeout for this specific operation
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -96,7 +86,6 @@ func (h *VideoHandler) captureAndAnalyze(imageData []byte) {
 		ID:             fmt.Sprintf("%s-%d", h.session.ID, time.Now().Unix()),
 		SessionID:      h.session.ID,
 		Timestamp:      time.Now(),
-		ImageData:      imageData,
 		Overview:       environmentSummary.Overview,
 		KeyElements:    environmentSummary.KeyElements,
 		Layout:         environmentSummary.Layout,

@@ -3,7 +3,6 @@ package utils
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -111,10 +110,9 @@ Be conservative - only mark as clear intention if the user is explicitly asking 
 }
 
 // AnalyzeImageContext requests a detailed, structured, holistic context description.
-func (c *OpenAIClient) AnalyzeImageContext(ctx context.Context, imageData []byte) (*models.EnvironmentContext, error) {
+func (c *OpenAIClient) AnalyzeImageContext(ctx context.Context, imageData string) (*models.EnvironmentContext, error) {
 	// 1) Base64 encode the image
-	b64 := base64.StdEncoding.EncodeToString(imageData)
-	dataURI := fmt.Sprintf("data:image/jpeg;base64,%s", b64)
+	dataURI := fmt.Sprintf("data:image/jpeg;base64,%s", imageData)
 
 	// 2) System prompt to enforce JSON-only output with desired fields
 	systemPrompt := `You are a vision-enabled assistant. Return ONLY a JSON object with key: overview (string), key_elements (array of strings), layout (string), activities (array of strings), additional_info (object of string pairs). No extra keys or prose.`

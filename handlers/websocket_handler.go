@@ -417,13 +417,6 @@ func triggerOrchestrator(rs *RoboSession, intention models.IntentionResult) {
 
 // handles API requests to capture an image
 func (rs *RoboSession) handleVideoData(msg WebSocketMessage) {
-	if b64, ok := msg.Data.(string); ok {
-		select {
-		case rs.VideoAnalysisCh <- b64:
-		default:
-			rs.Logger.Warn("video_data channel full, dropping frame")
-		}
-	} else {
-		rs.Logger.Warn("video_data payload not a string", zap.Any("data", msg.Data))
-	}
+	b64 := msg.Data.(string)
+	rs.VideoAnalysisCh <- b64
 }
