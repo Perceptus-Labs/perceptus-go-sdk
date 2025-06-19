@@ -50,6 +50,9 @@ var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
 		return true // Allow connections from any origin
 	},
+	EnableCompression: true,
+	ReadBufferSize:    1024,
+	WriteBufferSize:   1024,
 }
 
 func NewRoboSession(id string, conn *websocket.Conn, redisClient *redis.Client) *RoboSession {
