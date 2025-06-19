@@ -228,6 +228,8 @@ func (rs *RoboSession) listenWebsocketMessages(conn *websocket.Conn) {
 			rs.handleConfigMessage(msg.Data)
 		case "audio_data":
 			rs.handleAudioData(rs.AudioHandler, msg.Data)
+		case "video_data":
+			rs.handleVideoData(msg)
 		case "ping":
 			// Send pong response
 			pongMsg := WebSocketMessage{
@@ -413,28 +415,15 @@ func triggerOrchestrator(rs *RoboSession, intention models.IntentionResult) {
 	}
 }
 
-// HandleCameraCapture handles API requests to capture an image
-func HandleCameraCapture(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
+// handles API requests to capture an image
+func (rs *RoboSession) handleVideoData(msg WebSocketMessage) {
+	if b64, ok := msg.Data.(string); ok {
+		select {
+		case rs.VideoAnalysisCh <- b64:
+		default:
+			rs.Logger.Warn("video_data channel full, dropping frame")
+		}
+	} else {
+		rs.Logger.Warn("video_data payload not a string", zap.Any("data", msg.Data))
 	}
-
-	// This would be used to trigger camera capture for testing or external requests
-	zap.L().Info("Camera capture requested via API")
-
-	// In a real implementation, you'd:
-	// 1. Get the session ID from the request
-	// 2. Find the active session
-	// 3. Trigger video capture
-	// 4. Return the result
-
-	w.Header().Set("Content-Type", "application/json")
-	response := map[string]interface{}{
-		"status":    "success",
-		"message":   "Camera capture triggered",
-		"timestamp": time.Now(),
-	}
-
-	json.NewEncoder(w).Encode(response)
 }

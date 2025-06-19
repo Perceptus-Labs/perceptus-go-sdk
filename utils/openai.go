@@ -54,43 +54,6 @@ func NewOpenAIClient() *OpenAIClient {
 	}
 }
 
-func (c *OpenAIClient) AnalyzeImage(ctx context.Context, imageData []byte, prompt string) (*models.IntentionResult, error) {
-	// Convert image to base64
-	base64Image := base64.StdEncoding.EncodeToString(imageData)
-	imageURL := fmt.Sprintf("data:image/jpeg;base64,%s", base64Image)
-
-	// Prepare the message with image
-	content := []ImageContent{
-		{
-			Type: "text",
-			Text: prompt,
-		},
-		{
-			Type: "image_url",
-			ImageURL: &struct {
-				URL string `json:"url"`
-			}{
-				URL: imageURL,
-			},
-		},
-	}
-
-	messages := []GPTMessage{
-		{
-			Role:    "user",
-			Content: content,
-		},
-	}
-
-	requestBody := map[string]interface{}{
-		"model":      "gpt-4o",
-		"messages":   messages,
-		"max_tokens": 1000,
-	}
-
-	return c.sendRequest(ctx, requestBody)
-}
-
 func (c *OpenAIClient) AnalyzeTranscriptForIntention(ctx context.Context, transcript string, environmentContext []string) (*models.IntentionResult, error) {
 	contextStr := ""
 	if len(environmentContext) > 0 {
@@ -147,27 +110,77 @@ Be conservative - only mark as clear intention if the user is explicitly asking 
 	return c.sendRequest(ctx, requestBody)
 }
 
-func (c *OpenAIClient) GenerateEnvironmentDescription(ctx context.Context, imageData []byte) (*models.IntentionResult, error) {
-	prompt := `Analyze this image and provide a detailed description of the environment for a robot assistant. Focus on:
+// AnalyzeImageContext requests a detailed, structured, holistic context description.
+func (c *OpenAIClient) AnalyzeImageContext(ctx context.Context, imageData []byte) (*models.EnvironmentContext, error) {
+	// 1) Base64 encode the image
+	b64 := base64.StdEncoding.EncodeToString(imageData)
+	dataURI := fmt.Sprintf("data:image/jpeg;base64,%s", b64)
 
-1. Key objects and their locations (be specific about positioning)
-2. Room type and layout
-3. People present (if any)
-4. Furniture and fixtures
-5. Any items that could be relevant for robot tasks
-6. Overall scene context
+	// 2) System prompt to enforce JSON-only output with desired fields
+	systemPrompt := `You are a vision-enabled assistant. Return ONLY a JSON object with key: overview (string), key_elements (array of strings), layout (string), activities (array of strings), additional_info (object of string pairs). No extra keys or prose.`
 
-Format your response as a structured list of observations that would be useful for a robot to understand the environment and help with potential tasks. Be detailed but concise.
+	// 3) User message including the image URI
+	userPrompt := fmt.Sprintf("Analyze the scene depicted by the image below and output a structured JSON context description. IMAGE_URI:%s", dataURI)
 
-Example format:
-- Room: Kitchen area with modern appliances
-- Objects: Coffee mug on counter (left side), smartphone on table (center), keys near door
-- People: One person standing near the refrigerator
-- Furniture: Wooden dining table with 4 chairs, granite countertop
-- Notable items: Fruit bowl with apples and bananas, coffee maker (right side of counter)
-- Context: Person appears to be preparing breakfast`
+	// 4) Build request body
+	payload := map[string]interface{}{
+		"model": "gpt-4o", // vision-enabled model
+		"messages": []map[string]string{
+			{"role": "system", "content": systemPrompt},
+			{"role": "user", "content": userPrompt},
+		},
+		"max_tokens": 500,
+	}
 
-	return c.AnalyzeImage(ctx, imageData, prompt)
+	bodyBytes, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		"https://api.openai.com/v1/chat/completions", bytes.NewBuffer(bodyBytes))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create HTTP request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+c.APIKey)
+
+	resp, err := c.Client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed API request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("OpenAI API error: %s", string(b))
+	}
+
+	// 5) Decode response
+	var raw struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+	if len(raw.Choices) == 0 {
+		return nil, fmt.Errorf("no choices in response")
+	}
+
+	content := raw.Choices[0].Message.Content
+	zap.L().Debug("OpenAI context JSON", zap.String("content", content))
+
+	// 6) Unmarshal into our struct
+	var ctxDesc models.EnvironmentContext
+	if err := json.Unmarshal([]byte(content), &ctxDesc); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal context JSON: %w", err)
+	}
+
+	return &ctxDesc, nil
 }
 
 func (c *OpenAIClient) sendRequest(ctx context.Context, requestBody map[string]interface{}) (*models.IntentionResult, error) {
