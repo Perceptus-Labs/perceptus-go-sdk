@@ -132,7 +132,7 @@ func (h *IntentionHandler) getRelevantEnvironmentContext(ctx context.Context, tr
 		if match.Vector != nil && match.Vector.Metadata != nil {
 			if text, err := h.extractAvailablePineconeFields(match.Vector.Metadata, "timestamp"); err == nil {
 				if text != "" {
-					contexts = append(contexts, text)
+					contexts = append(contexts, fmt.Sprintf("Context Timestamp: %s", text))
 				}
 			}
 			if text, err := h.extractAvailablePineconeFields(match.Vector.Metadata, "overview"); err == nil {
