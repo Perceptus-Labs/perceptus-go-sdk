@@ -11,6 +11,41 @@
       border: 1px solid #ccc;
       display: block; margin: 10px 0;
     }
+    .message {
+      margin: 5px 0;
+      padding: 5px;
+      border-radius: 4px;
+    }
+    .error {
+      background-color: #ffeeee;
+      color: #cc0000;
+    }
+    .received {
+      background-color: #eeffee;
+      color: #006600;
+    }
+    .sent {
+      background-color: #eeeeff;
+      color: #000066;
+    }
+    .info {
+      background-color: #ffffee;
+      color: #666600;
+    }
+    .status {
+      padding: 5px;
+      border-radius: 4px;
+      display: inline-block;
+      margin-bottom: 10px;
+    }
+    .connected {
+      background-color: #eeffee;
+      color: #006600;
+    }
+    .disconnected {
+      background-color: #ffeeee;
+      color: #cc0000;
+    }
   </style>
 </head>
 <body>
@@ -25,17 +60,21 @@
     <h3>Live Video Preview</h3>
     <!-- hidden video to capture from camera -->
     <video id="localVideo" autoplay playsinline style="display:none;"></video>
+    <!-- display local camera preview -->
+    <canvas id="localCanvas" style="width: 320px; height: 240px; border: 1px solid #ccc; display: block; margin: 10px 0;"></canvas>
     <!-- display server‐sent video frames -->
     <img id="videoPreview" src="" alt="Server video frame"/>
 
     <h3>Send Test Audio Data</h3>
     <button id="audioBtn" onclick="toggleAudio()" disabled>Start Audio Stream</button>
+    <div id="audioStatus" style="margin: 10px 0; color: #666;">Audio Status: Not started</div>
 
     <h3>Configuration</h3>
     <select id="videoFreq">
       <option value="1s">1 second</option>
       <option value="5s">5 seconds</option>
-      <option value="10s" selected>10 seconds</option>
+      <option value="10s">10 seconds</option>
+      <option value="30s" selected>30 seconds</option>
     </select>
     <button id="configBtn" onclick="sendConfig()" disabled>Update Config</button>
 
@@ -83,8 +122,12 @@
           const vid = document.getElementById('localVideo');
           vid.srcObject = stream;
           vid.onloadedmetadata = () => vid.play();
+          
           // capture a frame at the configured interval
-          videoTimer = setInterval(captureAndSendFrame, parseDuration(document.getElementById('videoFreq').value));
+          const frequency = document.getElementById('videoFreq').value;
+          const interval = parseDuration(frequency);
+          videoTimer = setInterval(captureAndSendFrame, interval);
+          addMessage(`Video capture started with frequency: ${frequency} (${interval}ms)`, 'info');
         })
         .catch(e => addMessage('Camera error: '+e, 'error'));
     }
@@ -94,44 +137,117 @@
       if (ws.readyState !== WebSocket.OPEN) return;
       const c = document.createElement('canvas');
       c.width = vid.videoWidth; c.height = vid.videoHeight;
-      c.getContext('2d').drawImage(vid, 0, 0);
+      const ctx = c.getContext('2d');
+      ctx.drawImage(vid, 0, 0);
+      
+      // Also draw to local preview canvas
+      const localCanvas = document.getElementById('localCanvas');
+      const localCtx = localCanvas.getContext('2d');
+      localCanvas.width = vid.videoWidth;
+      localCanvas.height = vid.videoHeight;
+      localCtx.drawImage(vid, 0, 0, localCanvas.width, localCanvas.height);
+      
       c.toBlob(blob => {
         const reader = new FileReader();
         reader.onloadend = () => {
           const b64 = reader.result.split(',')[1];
           ws.send(JSON.stringify({ type:'video_data', data:b64, timestamp:new Date().toISOString() }));
+          addMessage(`Video frame sent (${blob.size} bytes)`, 'sent');
         };
         reader.readAsDataURL(blob);
-      }, 'image/jpeg');
+      }, 'image/jpeg', 0.8);  // Add quality parameter
     }
 
     function toggleAudio() {
       if (audioRecorder) return stopAudio();
-      navigator.mediaDevices.getUserMedia({ audio: true })
+      
+      // Request specific audio constraints
+      const constraints = {
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          sampleRate: 16000,  // Deepgram prefers 16kHz
+          channelCount: 1     // Mono audio
+        }
+      };
+      
+      navigator.mediaDevices.getUserMedia(constraints)
         .then(stream => {
           audioStream = stream;
-          audioRecorder = new MediaRecorder(stream);
+          
+          // Check supported MIME types
+          let mimeType = 'audio/webm';
+          if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+            mimeType = 'audio/webm;codecs=opus';
+          } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+            mimeType = 'audio/mp4';
+          }
+          
+          audioRecorder = new MediaRecorder(stream, { mimeType });
+          
+          let chunkCount = 0;
           audioRecorder.ondataavailable = e => {
-            const reader = new FileReader();
-            reader.onloadend = () => {
-              const b64 = reader.result.split(',')[1];
-              if (ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({ type:'audio_data', data:b64, timestamp:new Date().toISOString() }));
-              }
-            };
-            reader.readAsDataURL(e.data);
+            if (e.data.size > 0) {
+              const reader = new FileReader();
+              reader.onloadend = () => {
+                const b64 = reader.result.split(',')[1];
+                if (ws.readyState === WebSocket.OPEN) {
+                  ws.send(JSON.stringify({ type:'audio_data', data:b64, timestamp:new Date().toISOString() }));
+                  chunkCount++;
+                  document.getElementById('audioStatus').textContent = `Audio Status: Streaming (${chunkCount} chunks sent)`;
+                  addMessage(`Audio chunk ${chunkCount} sent (${e.data.size} bytes, ${mimeType})`, 'sent');
+                }
+              };
+              reader.readAsDataURL(e.data);
+            }
           };
-          audioRecorder.start();
+          
+          audioRecorder.start(1000);  // Send chunks every 1 second
           document.getElementById('audioBtn').textContent = 'Stop Audio Stream';
+          document.getElementById('audioStatus').textContent = 'Audio Status: Recording...';
+          addMessage(`Audio stream started (${mimeType})`, 'info');
+          
+          // Monitor audio levels
+          const audioContext = new AudioContext();
+          const analyser = audioContext.createAnalyser();
+          const microphone = audioContext.createMediaStreamSource(stream);
+          microphone.connect(analyser);
+          
+          analyser.fftSize = 256;
+          const bufferLength = analyser.frequencyBinCount;
+          const dataArray = new Uint8Array(bufferLength);
+          
+          function checkAudioLevel() {
+            if (!audioRecorder || audioRecorder.state !== 'recording') return;
+            
+            analyser.getByteFrequencyData(dataArray);
+            const average = dataArray.reduce((a, b) => a + b) / bufferLength;
+            
+            if (average > 10) {  // Threshold for detecting audio
+              document.getElementById('audioStatus').textContent = 
+                `Audio Status: Streaming (${chunkCount} chunks sent) - Level: ${Math.round(average)}`;
+            }
+            
+            requestAnimationFrame(checkAudioLevel);
+          }
+          checkAudioLevel();
+          
         })
-        .catch(e => addMessage('Mic error: '+e, 'error'));
+        .catch(e => {
+          addMessage('Mic error: ' + e.message, 'error');
+          document.getElementById('audioStatus').textContent = 'Audio Status: Error - ' + e.message;
+        });
     }
 
     function stopAudio() {
-      audioRecorder.stop();
-      audioStream.getTracks().forEach(t => t.stop());
-      audioRecorder = null;
-      document.getElementById('audioBtn').textContent = 'Start Audio Stream';
+      if (audioRecorder) {
+        audioRecorder.stop();
+        audioStream.getTracks().forEach(t => t.stop());
+        audioRecorder = null;
+        document.getElementById('audioBtn').textContent = 'Start Audio Stream';
+        document.getElementById('audioStatus').textContent = 'Audio Status: Stopped';
+        addMessage('Audio stream stopped', 'info');
+      }
     }
 
     function stopMedia() {
@@ -145,11 +261,19 @@
       ws.send(JSON.stringify({ type:'ping', timestamp:new Date().toISOString() }));
     }
     function sendConfig() {
+      const frequency = document.getElementById('videoFreq').value;
       ws.send(JSON.stringify({
         type:'config',
-        data:{ video_frequency: document.getElementById('videoFreq').value },
+        data:{ video_frequency: frequency },
         timestamp:new Date().toISOString()
       }));
+      
+      // Apply new frequency immediately
+      if (videoTimer) {
+        clearInterval(videoTimer);
+        videoTimer = setInterval(captureAndSendFrame, parseDuration(frequency));
+        addMessage(`Video frequency updated to ${frequency}`, 'info');
+      }
     }
     function stopSession() {
       ws.send(JSON.stringify({ type:'stop', timestamp:new Date().toISOString() }));
@@ -162,14 +286,35 @@
       st.textContent = txt;
       st.className = 'status ' + (ok?'connected':'disconnected');
     }
+    function clearMessages() {
+      document.getElementById('messages').innerHTML = '';
+      addMessage('Messages cleared', 'info');
+    }
+    
+    // Track message count to prevent too many messages
+    let messageCount = 0;
+    const MAX_MESSAGES = 100;
+    
     function addMessage(txt, cls='msg') {
       const m = document.createElement('div');
       m.className = 'message '+cls;
       m.innerText = `[${new Date().toLocaleTimeString()}] ${txt}`;
-      document.getElementById('messages').appendChild(m);
-    }
-    function clearMessages() {
-      document.getElementById('messages').innerHTML = '';
+      
+      const messagesDiv = document.getElementById('messages');
+      messagesDiv.appendChild(m);
+      messageCount++;
+      
+      // Auto-prune if too many messages
+      if (messageCount > MAX_MESSAGES) {
+        // Remove the oldest message
+        if (messagesDiv.firstChild) {
+          messagesDiv.removeChild(messagesDiv.firstChild);
+        }
+        messageCount--;
+      }
+      
+      // Auto-scroll to bottom
+      messagesDiv.scrollTop = messagesDiv.scrollHeight;
     }
     function parseDuration(s) {
       // "5s" → 5000

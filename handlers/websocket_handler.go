@@ -1,3 +1,5 @@
+// handlers/websocket_handler.go
+
 package handlers
 
 import (
@@ -300,10 +302,10 @@ func (rs *RoboSession) handleConfigMessage(data interface{}) {
 		}
 	}
 
-	// session.sendWebSocketMessage("config_updated", map[string]interface{}{
-	// 	"video_frequency": session.VideoFrequency.String(),
-	// 	"audio_frequency": session.AudioFrequency.String(),
-	// })
+	rs.sendWebSocketMessage("config_updated", map[string]interface{}{
+		"video_frequency": rs.VideoFrequency.String(),
+		"audio_frequency": rs.AudioFrequency.String(),
+	})
 }
 
 func (rs *RoboSession) handleAudioData(audioHandler *AudioHandler, data interface{}) {
@@ -340,18 +342,17 @@ func (rs *RoboSession) extractAudioBytes(data interface{}) ([]byte, error) {
 	}
 }
 
-// func (session *RoboSession) sendWebSocketMessage(msgType string, data interface{}) {
-// 	msg := WebSocketMessage{
-// 		Type:      msgType,
-// 		Data:      data,
-// 		Timestamp: time.Now(),
-// 	}
-
-// 	err := session.Connection.WriteJSON(msg)
-// 	if err != nil {
-// 		session.Logger.Error("Failed to send websocket message", zap.Error(err), zap.String("type", msgType))
-// 	}
-// }
+func (rs *RoboSession) sendWebSocketMessage(msgType string, data interface{}) {
+	msg := WebSocketMessage{
+		Type:      msgType,
+		Data:      data,
+		Timestamp: time.Now(),
+	}
+	if err := rs.Connection.WriteJSON(msg); err != nil {
+		rs.Logger.Error("failed to send ws message",
+			zap.String("type", msgType), zap.Error(err))
+	}
+}
 
 func triggerOrchestrator(rs *RoboSession, intention models.IntentionResult) {
 	rs.Logger.Info("Triggering orchestrator", zap.Any("intention", intention))
@@ -417,6 +418,21 @@ func triggerOrchestrator(rs *RoboSession, intention models.IntentionResult) {
 
 // handles API requests to capture an image
 func (rs *RoboSession) handleVideoData(msg WebSocketMessage) {
-	b64 := msg.Data.(string)
-	rs.VideoAnalysisCh <- b64
+	b64, ok := msg.Data.(string)
+	if !ok {
+		rs.Logger.Warn("video_data payload not a string", zap.Any("data", msg.Data))
+		return
+	}
+
+	// 1) echo back so the <img id="videoPreview"> renders it
+	rs.sendWebSocketMessage("video_frame", map[string]string{
+		"image_b64": b64,
+	})
+
+	// 2) then hand off for analysis
+	select {
+	case rs.VideoAnalysisCh <- b64:
+	default:
+		rs.Logger.Warn("video_analysis channel full, dropping frame")
+	}
 }

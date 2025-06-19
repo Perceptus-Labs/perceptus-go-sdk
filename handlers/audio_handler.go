@@ -1,3 +1,5 @@
+// handlers/audio_handler.go
+
 package handlers
 
 import (
@@ -55,7 +57,9 @@ func (h *AudioHandler) handleTranscript() {
 			// Process the accumulated transcript for intention
 			if h.session.CurrentTranscript != "" {
 				h.session.Logger.Info("End of speech detected, processing transcript", zap.String("transcript", h.session.CurrentTranscript))
-
+				h.session.sendWebSocketMessage("transcript_final", map[string]string{
+					"transcript": transcript,
+				})
 				// Update context for new processing
 				h.session.UpdateContext()
 
@@ -77,10 +81,9 @@ func (h *AudioHandler) handleTranscript() {
 				h.session.CurrentTranscript += transcript + " "
 
 				// Send interim transcript to client
-				// h.session.sendWebSocketMessage("transcript_interim", map[string]interface{}{
-				// 	"transcript": strings.TrimSpace(h.session.CurrentTranscript),
-				// 	"timestamp":  time.Now(),
-				// })
+				h.session.sendWebSocketMessage("transcript_interim", map[string]string{
+					"transcript": strings.TrimSpace(h.session.CurrentTranscript),
+				})
 			}
 		}
 	}
