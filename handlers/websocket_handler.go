@@ -232,21 +232,6 @@ func (session *RoboSession) handleSessionOrchestrator(audioHandler *AudioHandler
 	// Start the main event loop
 	for session.IsActive {
 		select {
-
-		case intentionResult := <-session.IntentionCh:
-			session.Logger.Info("Received intention result",
-				zap.String("description", intentionResult.Description),
-				zap.Bool("has_clear_intention", intentionResult.HasClearIntention),
-				zap.Float64("confidence", intentionResult.Confidence))
-
-			if intentionResult.HasClearIntention {
-				session.Logger.Info("Clear intention detected, triggering orchestrator")
-				go triggerOrchestrator(session, intentionResult)
-			}
-
-			// Send intention result to client
-			session.sendWebSocketMessage("intention_result", intentionResult)
-
 		case videoAnalysis := <-session.VideoAnalysisCh:
 			if videoAnalysis == models.SESSION_END {
 				session.Logger.Info("Session orchestrator received SESSION_END")

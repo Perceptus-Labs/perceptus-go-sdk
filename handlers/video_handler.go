@@ -3,7 +3,6 @@ package handlers
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/Perceptus-Labs/perceptus-go-sdk/models"
@@ -116,7 +115,6 @@ func (h *VideoHandler) captureAndAnalyze() {
 		ID:          fmt.Sprintf("%s-%d", h.session.ID, time.Now().Unix()),
 		SessionID:   h.session.ID,
 		Description: description,
-		Objects:     h.extractObjects(description),
 		Timestamp:   time.Now(),
 		ImageData:   imageData,
 	}
@@ -125,7 +123,6 @@ func (h *VideoHandler) captureAndAnalyze() {
 	analysis := models.VideoAnalysis{
 		SessionID:          h.session.ID,
 		Description:        description,
-		KeyObjects:         envContext.Objects,
 		EnvironmentSummary: description,
 		Timestamp:          time.Now(),
 	}
@@ -137,14 +134,14 @@ func (h *VideoHandler) captureAndAnalyze() {
 
 	// Send to video analysis channel
 	select {
-	case h.session.VideoAnalysisCh <- fmt.Sprintf("Environment analysis: %s", description):
+	case h.session.VideoAnalysisCh <- fmt.Sprintf("%s", analysis):
 		h.session.Logger.Debug("Sent video analysis to channel")
 	default:
 		h.session.Logger.Warn("Video analysis channel full, dropping analysis")
 	}
 
 	// Send analysis result via websocket
-	h.session.sendWebSocketMessage("video_analysis", analysis)
+	// h.session.sendWebSocketMessage("video_analysis", analysis)
 }
 
 func (h *VideoHandler) CaptureImageForContext(transcript string) (string, error) {
@@ -192,7 +189,6 @@ Provide a detailed but concise description focusing on elements that would be mo
 			ID:          fmt.Sprintf("%s-context-%d", h.session.ID, time.Now().Unix()),
 			SessionID:   h.session.ID,
 			Description: fmt.Sprintf("Context for transcript: '%s' - %s", transcript, description),
-			Objects:     h.extractObjects(description),
 			Timestamp:   time.Now(),
 			ImageData:   imageData,
 		}
@@ -200,31 +196,6 @@ Provide a detailed but concise description focusing on elements that would be mo
 	}
 
 	return description, nil
-}
-
-func (h *VideoHandler) extractObjects(description string) []string {
-	// Simple object extraction from description
-	// This could be made more sophisticated with NLP
-	objects := []string{}
-
-	// Convert to lowercase for easier matching
-	desc := strings.ToLower(description)
-
-	// Common objects to look for
-	commonObjects := []string{
-		"table", "chair", "couch", "sofa", "bed", "desk", "book", "laptop", "computer",
-		"phone", "cup", "mug", "glass", "plate", "bottle", "keys", "remote", "tv",
-		"light", "lamp", "door", "window", "kitchen", "bathroom", "bedroom", "living room",
-		"person", "man", "woman", "child", "dog", "cat", "coffee", "water", "food",
-	}
-
-	for _, obj := range commonObjects {
-		if strings.Contains(desc, obj) {
-			objects = append(objects, obj)
-		}
-	}
-
-	return objects
 }
 
 func (h *VideoHandler) storeEnvironmentContext(envContext models.EnvironmentContext) {
@@ -239,7 +210,7 @@ func (h *VideoHandler) storeEnvironmentContext(envContext models.EnvironmentCont
 	h.session.Logger.Debug("Storing environment context in Pinecone")
 
 	// Create embeddings for each object and the description
-	allTexts := append(envContext.Objects, envContext.Description)
+	allTexts := []string{envContext.Description}
 
 	for i, text := range allTexts {
 		// Check if context was cancelled before proceeding
@@ -266,13 +237,6 @@ func (h *VideoHandler) storeEnvironmentContext(envContext models.EnvironmentCont
 			"session_id": envContext.SessionID,
 			"timestamp":  envContext.Timestamp.Unix(),
 			"type":       "environment_context",
-		}
-
-		if i < len(envContext.Objects) {
-			metadata["object_type"] = "object"
-			metadata["object_name"] = text
-		} else {
-			metadata["object_type"] = "description"
 		}
 
 		// Use the utility function to upsert to Pinecone

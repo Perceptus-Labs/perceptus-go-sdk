@@ -22,7 +22,6 @@ type EnvironmentContext struct {
 	ID          string
 	SessionID   string
 	Description string
-	Objects     []string
 	Timestamp   time.Time
 	ImageData   []byte // Optional: store the image data
 }
