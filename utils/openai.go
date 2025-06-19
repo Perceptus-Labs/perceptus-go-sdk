@@ -221,11 +221,11 @@ func (c *OpenAIClient) sendRequest(ctx context.Context, requestBody map[string]i
 
 		// Create a default intention result with the raw content
 		intentionResult = models.IntentionResult{
-			HasClearIntention:  false,
-			IntentionType:      "unknown",
-			Description:        content,
-			Confidence:         0.0,
-			EnvironmentContext: content,
+			HasClearIntention:  intentionResult.HasClearIntention,
+			IntentionType:      intentionResult.IntentionType,
+			Description:        intentionResult.Description,
+			Confidence:         intentionResult.Confidence,
+			EnvironmentContext: intentionResult.EnvironmentContext,
 			Timestamp:          time.Now(),
 		}
 	}
