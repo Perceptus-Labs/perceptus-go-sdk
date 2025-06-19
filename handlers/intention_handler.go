@@ -50,22 +50,11 @@ func InitIntentionHandler(session *RoboSession) *IntentionHandler {
 func (h *IntentionHandler) run() {
 	h.session.Logger.Info("Intention handler goroutine started")
 
+	// The intention handler doesn't need to run continuously
+	// It will be called directly when there's a transcript to analyze
+	// Just wait for the session to end
 	for h.isActive {
-		select {
-		case intentionResult := <-h.session.IntentionCh:
-			if intentionResult.HasClearIntention {
-				h.session.Logger.Info("Intention detected",
-					zap.String("type", intentionResult.IntentionType),
-					zap.String("description", intentionResult.Description),
-					zap.Float64("confidence", intentionResult.Confidence))
-			}
-			// Process intention result (handled by orchestrator)
-
-		case <-h.session.CurrentContext.Done():
-			h.session.Logger.Debug("Intention handler context cancelled, waiting for new context")
-			// Don't exit, just wait for the next context to be created
-			// The session will create a new context when needed
-		}
+		time.Sleep(1 * time.Second)
 	}
 
 	h.session.Logger.Info("Intention handler goroutine stopped")
@@ -117,12 +106,16 @@ func (h *IntentionHandler) analyzeIntention(transcript string) {
 		Timestamp:          time.Now(),
 	}
 
-	// Send to intention channel
-	select {
-	case h.session.IntentionCh <- result:
-		h.session.Logger.Debug("Sent intention result to channel")
-	default:
-		h.session.Logger.Warn("Intention channel full, dropping result")
+	// Log the intention result
+	if hasIntention {
+		h.session.Logger.Info("Intention detected",
+			zap.String("type", intentionType),
+			zap.String("description", description),
+			zap.Float64("confidence", confidence))
+	} else {
+		h.session.Logger.Debug("No clear intention detected",
+			zap.String("description", description),
+			zap.Float64("confidence", confidence))
 	}
 
 	// If clear intention detected, make API call to orchestrator
@@ -130,7 +123,7 @@ func (h *IntentionHandler) analyzeIntention(transcript string) {
 		go h.notifyOrchestrator(result)
 	}
 
-	// Send result via websocket
+	// Send result via websocket (if needed)
 	// h.session.sendWebSocketMessage("intention_analysis", result)
 }
 
@@ -211,5 +204,7 @@ func (h *IntentionHandler) ProcessTranscript(transcript string) {
 	}
 
 	h.session.Logger.Info("Processing transcript for intention analysis", zap.String("transcript", transcript))
-	go h.analyzeIntention(transcript)
+
+	// Analyze the intention directly
+	h.analyzeIntention(transcript)
 }

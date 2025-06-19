@@ -72,7 +72,12 @@ func (h *VideoHandler) run() {
 
 		case <-h.session.CurrentContext.Done():
 			h.session.Logger.Debug("Video handler context cancelled")
-			// Don't exit, just wait for next tick or SESSION_END
+			// Add a small delay to prevent infinite loop
+			time.Sleep(100 * time.Millisecond)
+			// Check if we should still be active
+			if !h.isActive {
+				break
+			}
 		}
 	}
 

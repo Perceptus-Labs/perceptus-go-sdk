@@ -208,10 +208,26 @@ func (c *OpenAIClient) sendRequest(ctx context.Context, requestBody map[string]i
 		return nil, fmt.Errorf("no choices in OpenAI API response")
 	}
 
-	// Parse the response
+	content := response.Choices[0].Message.Content
+	zap.L().Debug("OpenAI response content", zap.String("content", content))
+
+	// Try to parse as JSON first
 	var intentionResult models.IntentionResult
-	if err := json.Unmarshal([]byte(response.Choices[0].Message.Content), &intentionResult); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal intention result: %w", err)
+	if err := json.Unmarshal([]byte(content), &intentionResult); err != nil {
+		// If JSON parsing fails, create a default result with the raw content
+		zap.L().Warn("Failed to parse OpenAI response as JSON, using raw content",
+			zap.Error(err),
+			zap.String("content", content))
+
+		// Create a default intention result with the raw content
+		intentionResult = models.IntentionResult{
+			HasClearIntention:  false,
+			IntentionType:      "unknown",
+			Description:        content,
+			Confidence:         0.0,
+			EnvironmentContext: content,
+			Timestamp:          time.Now(),
+		}
 	}
 
 	return &intentionResult, nil

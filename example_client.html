@@ -218,6 +218,9 @@
 
         function handleMessage(data) {
             switch(data.type) {
+                case 'welcome':
+                    addMessage(`Welcome: ${data.data.message} (Session: ${data.data.session_id})`, 'system');
+                    break;
                 case 'pong':
                     addMessage('Received pong', 'received');
                     break;

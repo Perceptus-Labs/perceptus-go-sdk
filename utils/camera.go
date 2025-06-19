@@ -25,14 +25,39 @@ func (c *CameraCapture) CaptureImage() ([]byte, error) {
 	// Different commands based on operating system
 	switch runtime.GOOS {
 	case "darwin": // macOS
-		// Use ffmpeg to capture from camera (requires ffmpeg to be installed)
-		cmd = exec.Command("ffmpeg", "-f", "avfoundation", "-video_size", "640x480", "-framerate", "30", "-i", fmt.Sprintf("%d", c.DeviceID), "-vframes", "1", "-f", "image2pipe", "-vcodec", "mjpeg", "-")
+		// Use ffmpeg to capture from camera and output as JPEG
+		cmd = exec.Command("ffmpeg",
+			"-f", "avfoundation",
+			"-video_size", "640x480",
+			"-framerate", "30",
+			"-i", fmt.Sprintf("%d", c.DeviceID),
+			"-vframes", "1",
+			"-f", "image2pipe",
+			"-vcodec", "mjpeg",
+			"-q:v", "2", // High quality JPEG
+			"-")
 	case "linux":
 		// Use ffmpeg with v4l2 (Video4Linux2) on Linux
-		cmd = exec.Command("ffmpeg", "-f", "v4l2", "-video_size", "640x480", "-i", fmt.Sprintf("/dev/video%d", c.DeviceID), "-vframes", "1", "-f", "image2pipe", "-vcodec", "mjpeg", "-")
+		cmd = exec.Command("ffmpeg",
+			"-f", "v4l2",
+			"-video_size", "640x480",
+			"-i", fmt.Sprintf("/dev/video%d", c.DeviceID),
+			"-vframes", "1",
+			"-f", "image2pipe",
+			"-vcodec", "mjpeg",
+			"-q:v", "2", // High quality JPEG
+			"-")
 	case "windows":
 		// Use ffmpeg with dshow (DirectShow) on Windows
-		cmd = exec.Command("ffmpeg", "-f", "dshow", "-video_size", "640x480", "-i", fmt.Sprintf("video=\"USB Camera\""), "-vframes", "1", "-f", "image2pipe", "-vcodec", "mjpeg", "-")
+		cmd = exec.Command("ffmpeg",
+			"-f", "dshow",
+			"-video_size", "640x480",
+			"-i", fmt.Sprintf("video=\"USB Camera\""),
+			"-vframes", "1",
+			"-f", "image2pipe",
+			"-vcodec", "mjpeg",
+			"-q:v", "2", // High quality JPEG
+			"-")
 	default:
 		return nil, fmt.Errorf("unsupported operating system: %s", runtime.GOOS)
 	}
@@ -58,8 +83,8 @@ func (c *CameraCapture) CaptureImageMacOS() ([]byte, error) {
 		return nil, fmt.Errorf("imagesnap is only available on macOS")
 	}
 
-	// Use imagesnap to capture image to stdout
-	cmd := exec.Command("imagesnap", "-")
+	// Use imagesnap to capture image to stdout with JPEG format
+	cmd := exec.Command("imagesnap", "-d", "0", "-f", "jpeg", "-")
 	output, err := cmd.Output()
 	if err != nil {
 		zap.L().Error("Failed to capture image using imagesnap", zap.Error(err))

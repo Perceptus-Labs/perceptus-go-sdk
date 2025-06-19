@@ -27,7 +27,6 @@ type RoboSession struct {
 	TranscriptionCh chan string
 	InterruptionCh  chan string
 	VideoAnalysisCh chan string
-	IntentionCh     chan models.IntentionResult
 
 	// Session state
 	IsActive     bool
@@ -70,7 +69,6 @@ func NewRoboSession(id string, conn *websocket.Conn, redisClient *redis.Client) 
 		TranscriptionCh: make(chan string, 100),
 		InterruptionCh:  make(chan string, 100),
 		VideoAnalysisCh: make(chan string, 100),
-		IntentionCh:     make(chan models.IntentionResult, 10),
 
 		IsActive:     true,
 		StartTime:    time.Now(),
@@ -106,7 +104,6 @@ func (rs *RoboSession) Stop() {
 	close(rs.TranscriptionCh)
 	close(rs.InterruptionCh)
 	close(rs.VideoAnalysisCh)
-	close(rs.IntentionCh)
 
 	if rs.Connection != nil {
 		rs.Connection.Close()
@@ -179,21 +176,75 @@ func HandleRobotSession(w http.ResponseWriter, r *http.Request, redisClient *red
 	// Handle incoming websocket messages
 	go session.listenWebsocketMessages(conn, audioHandler)
 
+	// Send welcome message to client
+	welcomeMsg := WebSocketMessage{
+		Type: "welcome",
+		Data: map[string]interface{}{
+			"session_id": session.ID,
+			"message":    "Robot session started successfully",
+			"timestamp":  time.Now(),
+		},
+		Timestamp: time.Now(),
+	}
+	if err := conn.WriteJSON(welcomeMsg); err != nil {
+		session.Logger.Error("Failed to send welcome message", zap.Error(err))
+	}
+
 	// The session will keep running until the WebSocket connection is closed
 	// or a stop command is received
 }
 
 func (session *RoboSession) listenWebsocketMessages(conn *websocket.Conn, audioHandler *AudioHandler) {
+	session.Logger.Info("Starting WebSocket message listener")
+
 	// Handle incoming websocket messages
 	for {
+		// First try to read as JSON message
 		var msg WebSocketMessage
 		err := conn.ReadJSON(&msg)
 		if err != nil {
+			// If JSON parsing fails, try to read as raw message
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				session.Logger.Error("WebSocket error", zap.Error(err))
+				session.Logger.Error("WebSocket connection closed unexpectedly", zap.Error(err))
+			} else if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
+				session.Logger.Info("WebSocket connection closed normally")
+			} else {
+				session.Logger.Warn("Failed to read JSON message, trying raw message", zap.Error(err))
+
+				// Try to read as raw message
+				messageType, message, readErr := conn.ReadMessage()
+				if readErr != nil {
+					if websocket.IsUnexpectedCloseError(readErr, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+						session.Logger.Error("WebSocket error reading raw message", zap.Error(readErr))
+					}
+					break
+				}
+
+				// Handle raw message
+				session.Logger.Debug("Received raw message", zap.Int("type", messageType), zap.String("message", string(message)))
+
+				// If it's a text message, try to parse as JSON
+				if messageType == websocket.TextMessage {
+					if jsonErr := json.Unmarshal(message, &msg); jsonErr == nil {
+						// Successfully parsed as JSON, continue with normal handling
+					} else {
+						// Treat as raw text message
+						session.Logger.Debug("Received text message", zap.String("content", string(message)))
+						continue
+					}
+				} else if messageType == websocket.BinaryMessage {
+					// Handle binary message (likely audio data)
+					session.Logger.Debug("Received binary message", zap.Int("size", len(message)))
+					if err := audioHandler.ProcessAudioData(message); err != nil {
+						session.Logger.Error("Failed to process binary audio data", zap.Error(err))
+					}
+					continue
+				}
 			}
 			break
 		}
+
+		session.Logger.Debug("Received WebSocket message", zap.String("type", msg.Type))
 
 		// Handle different message types
 		switch msg.Type {
@@ -202,7 +253,14 @@ func (session *RoboSession) listenWebsocketMessages(conn *websocket.Conn, audioH
 		case "audio_data":
 			session.handleAudioData(audioHandler, msg.Data)
 		case "ping":
-			// session.sendWebSocketMessage("pong", nil)
+			// Send pong response
+			pongMsg := WebSocketMessage{
+				Type:      "pong",
+				Timestamp: time.Now(),
+			}
+			if err := conn.WriteJSON(pongMsg); err != nil {
+				session.Logger.Error("Failed to send pong", zap.Error(err))
+			}
 		case "stop":
 			session.Logger.Info("Received stop command from client")
 
@@ -213,16 +271,28 @@ func (session *RoboSession) listenWebsocketMessages(conn *websocket.Conn, audioH
 			session.Stop()
 
 			// Send confirmation back to client
-			// session.sendWebSocketMessage("stop_confirmation", map[string]interface{}{
-			// 	"session_id": session.ID,
-			// 	"message":    "Session stopped successfully",
-			// })
+			stopMsg := WebSocketMessage{
+				Type: "stop_confirmation",
+				Data: map[string]interface{}{
+					"session_id": session.ID,
+					"message":    "Session stopped successfully",
+				},
+				Timestamp: time.Now(),
+			}
+			if err := conn.WriteJSON(stopMsg); err != nil {
+				session.Logger.Error("Failed to send stop confirmation", zap.Error(err))
+			}
 
 			return
 		default:
 			session.Logger.Warn("Unknown message type", zap.String("type", msg.Type))
 		}
 	}
+
+	// Connection closed, stop the session
+	session.Logger.Info("WebSocket connection closed, stopping session")
+	session.SendToAllChannels(models.SESSION_END)
+	session.Stop()
 }
 
 func (session *RoboSession) handleSessionOrchestrator(audioHandler *AudioHandler, videoHandler *VideoHandler, intentionHandler *IntentionHandler) {
