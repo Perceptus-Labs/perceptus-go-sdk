@@ -48,8 +48,6 @@ func InitDeepgramClient(
 	ctx := context.Background()
 	transcriptOptions := &interfaces.LiveTranscriptionOptions{
 		Language:       lang,
-		Encoding:       "mulaw",
-		SampleRate:     8000,
 		Channels:       1,
 		Endpointing:    "100",
 		InterimResults: true,
