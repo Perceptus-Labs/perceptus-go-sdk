@@ -8,8 +8,10 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/Perceptus-Labs/perceptus-go-sdk/models"
@@ -423,6 +425,12 @@ func (rs *RoboSession) handleVideoData(msg WebSocketMessage) {
 		rs.Logger.Warn("video_data payload not a string", zap.Any("data", msg.Data))
 		return
 	}
+
+	if !strings.HasPrefix(b64, "data:image") {
+		b64 = "data:image/jpeg;base64," + b64
+	}
+
+	log.Println("b64", b64)
 
 	// 1) echo back so the <img id="videoPreview"> renders it
 	rs.sendWebSocketMessage("video_frame", map[string]string{

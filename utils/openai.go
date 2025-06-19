@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -112,6 +113,7 @@ Be conservative - only mark as clear intention if the user is explicitly asking 
 // AnalyzeImageContext requests a detailed, structured, holistic context description.
 func (c *OpenAIClient) AnalyzeImageContext(ctx context.Context, imageData string) (*models.EnvironmentContext, error) {
 	// 1) Construct the data URI
+	log.Println("imageData", imageData)
 	dataURI := imageData
 
 	// 2) System prompt to enforce JSON-only output with desired fields

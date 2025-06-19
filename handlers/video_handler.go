@@ -94,16 +94,8 @@ func (h *VideoHandler) captureAndAnalyze(imageData string) {
 		go h.storeEnvironmentContext(envContext)
 	}
 
-	// Send to video analysis channel
-	select {
-	case h.session.VideoAnalysisCh <- fmt.Sprintf("%s", envContext):
-		h.session.Logger.Debug("Sent video analysis to channel")
-	default:
-		h.session.Logger.Warn("Video analysis channel full, dropping analysis")
-	}
-
 	// Send analysis result via websocket
-	// h.session.sendWebSocketMessage("video_analysis", analysis)
+	h.session.sendWebSocketMessage("video_analysis", envContext)
 }
 
 func (h *VideoHandler) storeEnvironmentContext(envContext models.EnvironmentContext) {
