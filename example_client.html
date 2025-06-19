@@ -150,8 +150,8 @@
       c.toBlob(blob => {
         const reader = new FileReader();
         reader.onloadend = () => {
-          const b64 = reader.result.split(',')[1];
-          ws.send(JSON.stringify({ type:'video_data', data:b64, timestamp:new Date().toISOString() }));
+		const fullDataURI = reader.result;
+		ws.send(JSON.stringify({ type:'video_data', data: fullDataURI, timestamp:new Date().toISOString() }));
           addMessage(`Video frame sent (${blob.size} bytes)`, 'sent');
         };
         reader.readAsDataURL(blob);

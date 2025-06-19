@@ -111,7 +111,7 @@ Be conservative - only mark as clear intention if the user is explicitly asking 
 
 // AnalyzeImageContext requests a detailed, structured, holistic context description.
 func (c *OpenAIClient) AnalyzeImageContext(ctx context.Context, imageData string) (*models.EnvironmentContext, error) {
-	// 1) Base64 encode the image
+	// 1) Construct the data URI
 	var dataURI string
 	if !strings.HasPrefix(imageData, "data:image") {
 		dataURI = "data:image/jpeg;base64," + imageData
