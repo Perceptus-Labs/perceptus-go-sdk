@@ -13,13 +13,19 @@ import (
 	"github.com/lpernett/godotenv"
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 // Load environment variables from .env file
 // Without this, it tries to use the SSL cert logic
 func init() {
-	// Initialize zap logger
-	logger, err := zap.NewDevelopment()
+	// Initialize zap logger with colored output
+	config := zap.NewDevelopmentConfig()
+	config.EncoderConfig.EncodeLevel = zapcore.CapitalColorLevelEncoder
+	config.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
+	config.EncoderConfig.EncodeCaller = zapcore.ShortCallerEncoder
+
+	logger, err := config.Build()
 	if err != nil {
 		panic("Failed to initialize logger: " + err.Error())
 	}
@@ -67,6 +73,44 @@ func main() {
 	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	})
+
+	// Test endpoint
+	http.HandleFunc("/test", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		w.Write([]byte(`
+			<!DOCTYPE html>
+			<html>
+			<head><title>WebSocket Test</title></head>
+			<body>
+				<h1>WebSocket Test</h1>
+				<button onclick="testConnection()">Test Connection</button>
+				<div id="output"></div>
+				<script>
+					function testConnection() {
+						const ws = new WebSocket('ws://localhost:8080/robot/session');
+						const output = document.getElementById('output');
+						
+						ws.onopen = function() {
+							output.innerHTML += '<p style="color: green;">Connected!</p>';
+						};
+						
+						ws.onmessage = function(event) {
+							output.innerHTML += '<p style="color: blue;">Message: ' + event.data + '</p>';
+						};
+						
+						ws.onclose = function(event) {
+							output.innerHTML += '<p style="color: red;">Closed: ' + event.code + ' - ' + event.reason + '</p>';
+						};
+						
+						ws.onerror = function(error) {
+							output.innerHTML += '<p style="color: red;">Error: ' + error + '</p>';
+						};
+					}
+				</script>
+			</body>
+			</html>
+		`))
 	})
 
 	// Set up signal handling

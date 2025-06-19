@@ -108,28 +108,34 @@
 
         function connect() {
             const wsUrl = `ws://localhost:8080/robot/session`;
+            console.log('Attempting to connect to:', wsUrl);
             ws = new WebSocket(wsUrl);
             
             ws.onopen = function(event) {
+                console.log('WebSocket connection opened');
                 updateStatus('Connected', true);
                 addMessage('Connected to robot session', 'system');
             };
             
             ws.onmessage = function(event) {
+                console.log('Received message:', event.data);
                 try {
                     const data = JSON.parse(event.data);
                     handleMessage(data);
                 } catch (e) {
+                    console.error('Error parsing message:', e);
                     addMessage('Error parsing message: ' + event.data, 'error');
                 }
             };
             
             ws.onclose = function(event) {
+                console.log('WebSocket connection closed:', event.code, event.reason);
                 updateStatus('Disconnected', false);
-                addMessage('Connection closed', 'system');
+                addMessage(`Connection closed (code: ${event.code}, reason: ${event.reason})`, 'system');
             };
             
             ws.onerror = function(error) {
+                console.error('WebSocket error:', error);
                 addMessage('WebSocket error: ' + error, 'error');
             };
         }
