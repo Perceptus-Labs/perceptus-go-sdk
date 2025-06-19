@@ -75,9 +75,6 @@ func (h *VideoHandler) run() {
 			// Add a small delay to prevent infinite loop
 			time.Sleep(100 * time.Millisecond)
 			// Check if we should still be active
-			if !h.isActive {
-				break
-			}
 		}
 	}
 
