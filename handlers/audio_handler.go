@@ -36,8 +36,6 @@ func InitAudioHandler(session *RoboSession) (*AudioHandler, error) {
 	session.Logger.Info("Audio Handler initialized and connected to Deepgram")
 
 	// Start the handler goroutine to listen for SESSION_END
-	go audioHandler.run()
-
 	go audioHandler.handleTranscript()
 
 	return audioHandler, nil
@@ -86,36 +84,6 @@ func (h *AudioHandler) handleTranscript() {
 			}
 		}
 	}
-}
-
-func (h *AudioHandler) run() {
-	h.session.Logger.Info("Audio handler goroutine started")
-
-	for h.isActive {
-		select {
-		case transcript := <-h.session.TranscriptionCh:
-			if transcript == models.SESSION_END {
-				h.session.Logger.Info("Audio handler received SESSION_END")
-				return
-			}
-			// Process transcript - this gets handled by the orchestrator
-			h.session.Logger.Debug("Received transcript", zap.String("transcript", transcript))
-
-		case interruption := <-h.session.InterruptionCh:
-			if interruption == models.SESSION_END {
-				h.session.Logger.Info("Audio handler received SESSION_END")
-				return
-			}
-			// Process interruption - this gets handled by the orchestrator
-			h.session.Logger.Debug("Received interruption", zap.String("interruption", interruption))
-
-		case <-h.session.CurrentContext.Done():
-			h.session.Logger.Debug("Audio handler context cancelled")
-			// Don't exit, just wait for next message or SESSION_END
-		}
-	}
-
-	h.session.Logger.Info("Audio handler goroutine stopped")
 }
 
 // ProcessAudioData sends audio data directly to Deepgram (called from WebSocket handler)

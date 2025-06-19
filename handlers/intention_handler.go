@@ -62,8 +62,9 @@ func (h *IntentionHandler) run() {
 			// Process intention result (handled by orchestrator)
 
 		case <-h.session.CurrentContext.Done():
-			h.session.Logger.Debug("Intention handler context cancelled")
-			// Don't exit, just wait for next message or SESSION_END
+			h.session.Logger.Debug("Intention handler context cancelled, waiting for new context")
+			// Don't exit, just wait for the next context to be created
+			// The session will create a new context when needed
 		}
 	}
 

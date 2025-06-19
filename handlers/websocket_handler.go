@@ -179,9 +179,8 @@ func HandleRobotSession(w http.ResponseWriter, r *http.Request, redisClient *red
 	// Handle incoming websocket messages
 	go session.listenWebsocketMessages(conn, audioHandler)
 
-	// Clean up session
-	session.Logger.Info("Robot session ended")
-	session.Stop()
+	// The session will keep running until the WebSocket connection is closed
+	// or a stop command is received
 }
 
 func (session *RoboSession) listenWebsocketMessages(conn *websocket.Conn, audioHandler *AudioHandler) {
