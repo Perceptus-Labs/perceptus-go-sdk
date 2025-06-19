@@ -79,7 +79,7 @@ func NewRoboSession(id string, conn *websocket.Conn, redisClient *redis.Client) 
 		StartTime:    time.Now(),
 		LastActivity: time.Now(),
 
-		VideoFrequency: 10 * time.Second,       // Default: take picture every 10 seconds
+		VideoFrequency: 30 * time.Second,       // Default: take picture every 30 seconds
 		AudioFrequency: 100 * time.Millisecond, // Default: process audio continuously
 
 		CurrentTranscript: "",
