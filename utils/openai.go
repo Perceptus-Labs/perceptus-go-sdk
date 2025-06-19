@@ -170,11 +170,14 @@ func (c *OpenAIClient) AnalyzeImageContext(ctx context.Context, imageData string
 	}
 
 	content := raw.Choices[0].Message.Content
+	clean := strings.TrimSpace(content)
+	clean = strings.TrimPrefix(clean, "```json")
+	clean = strings.TrimSuffix(clean, "```")
 	zap.L().Debug("OpenAI context JSON", zap.String("content", content))
 
 	// 6) Unmarshal into our struct
 	var ctxDesc models.EnvironmentContext
-	if err := json.Unmarshal([]byte(content), &ctxDesc); err != nil {
+	if err := json.Unmarshal([]byte(clean), &ctxDesc); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal context JSON: %w", err)
 	}
 
