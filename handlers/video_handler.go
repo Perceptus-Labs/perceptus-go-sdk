@@ -15,7 +15,6 @@ import (
 
 type VideoHandler struct {
 	session      *RoboSession
-	camera       *utils.CameraCapture
 	openaiClient *utils.OpenAIClient
 	pineconeIdx  *pinecone.IndexConnection
 	isActive     bool
@@ -23,9 +22,6 @@ type VideoHandler struct {
 
 func InitVideoHandler(session *RoboSession) *VideoHandler {
 	session.Logger.Info("Initializing Video Handler...")
-
-	// Initialize camera
-	camera := utils.NewCameraCapture()
 
 	// Initialize OpenAI client
 	openaiClient := utils.NewOpenAIClient()
@@ -39,7 +35,6 @@ func InitVideoHandler(session *RoboSession) *VideoHandler {
 
 	videoHandler := &VideoHandler{
 		session:      session,
-		camera:       camera,
 		openaiClient: openaiClient,
 		pineconeIdx:  pineconeIdx,
 		isActive:     true,
