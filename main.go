@@ -10,21 +10,11 @@ import (
 	"time"
 
 	"github.com/Perceptus-Labs/perceptus-go-sdk/handlers"
-	"github.com/gorilla/websocket"
 	"github.com/lpernett/godotenv"
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
-
-var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool {
-		return true // Allow connections from any origin
-	},
-	EnableCompression: true,
-	ReadBufferSize:    1024,
-	WriteBufferSize:   1024,
-}
 
 // Load environment variables from .env file
 // Without this, it tries to use the SSL cert logic
