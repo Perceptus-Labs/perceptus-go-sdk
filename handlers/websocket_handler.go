@@ -27,7 +27,6 @@ type RoboSession struct {
 
 	// Channels for communication between handlers
 	TranscriptionCh chan string
-	InterruptionCh  chan string
 	VideoAnalysisCh chan string
 
 	// Session state
@@ -37,7 +36,6 @@ type RoboSession struct {
 
 	// Configuration
 	VideoFrequency time.Duration // How often to take pictures
-	AudioFrequency time.Duration // How often to process audio (if needed)
 
 	// Current transcript buffer
 	CurrentTranscript string
@@ -72,15 +70,13 @@ func NewRoboSession(id string, conn *websocket.Conn, redisClient *redis.Client) 
 		Logger:               logger,
 
 		TranscriptionCh: make(chan string, 100),
-		InterruptionCh:  make(chan string, 100),
 		VideoAnalysisCh: make(chan string, 100),
 
 		IsActive:     true,
 		StartTime:    time.Now(),
 		LastActivity: time.Now(),
 
-		VideoFrequency: 30 * time.Second,       // Default: take picture every 30 seconds
-		AudioFrequency: 100 * time.Millisecond, // Default: process audio continuously
+		VideoFrequency: 30 * time.Second, // Default: take picture every 30 seconds
 
 		CurrentTranscript: "",
 		LastActionTime:    time.Now(),
@@ -108,7 +104,6 @@ func (rs *RoboSession) Stop() {
 
 		// Close all channels
 		close(rs.TranscriptionCh)
-		close(rs.InterruptionCh)
 		close(rs.VideoAnalysisCh)
 
 		if rs.Connection != nil {
@@ -121,10 +116,6 @@ func (rs *RoboSession) SendToAllChannels(message string) {
 	// Send to all channels that accept strings
 	select {
 	case rs.TranscriptionCh <- message:
-	default:
-	}
-	select {
-	case rs.InterruptionCh <- message:
 	default:
 	}
 	select {
@@ -290,19 +281,8 @@ func (rs *RoboSession) handleConfigMessage(data interface{}) {
 		}
 	}
 
-	// Parse audio frequency
-	if audioFreq, exists := configData["audio_frequency"]; exists {
-		if freqStr, ok := audioFreq.(string); ok {
-			if duration, err := time.ParseDuration(freqStr); err == nil {
-				rs.AudioFrequency = duration
-				rs.Logger.Info("Updated audio frequency", zap.Duration("frequency", duration))
-			}
-		}
-	}
-
 	rs.sendWebSocketMessage("config_updated", map[string]interface{}{
 		"video_frequency": rs.VideoFrequency.String(),
-		"audio_frequency": rs.AudioFrequency.String(),
 	})
 }
 
