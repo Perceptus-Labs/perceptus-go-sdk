@@ -1,0 +1,81 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Documentation
+README.md
+*.md
+docs/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Environment files (should be provided at runtime)
+.env
+.env.local
+.env.production
+config.example.env
+
+# Build artifacts
+perceptus-go-sdk
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test files
+*_test.go
+test/
+tests/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Docker files (except Dockerfile)
+docker-compose*.yml
+.dockerignore
+
+# Deployment scripts
+deploy.sh
+deployment.sh
+
+# Node modules (if any)
+node_modules/
+
+# Python cache (if any)
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+ENV/
+
+# Coverage reports
+coverage/
+*.out
+
+# Profiling data
+*.prof
+*.pprof 

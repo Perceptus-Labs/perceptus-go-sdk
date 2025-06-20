@@ -1,0 +1,61 @@
+version: '3.8'
+
+services:
+  perceptus-go-sdk:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      # Redis configuration
+      - REDIS_URL=redis://redis:6379
+      
+      # OpenAI configuration
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      
+      # Deepgram configuration
+      - DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY}
+      
+      # Pinecone configuration
+      - PINECONE_API_KEY=${PINECONE_API_KEY}
+      - PINECONE_HOST=${PINECONE_HOST}
+      - PINECONE_NAMESPACE=${PINECONE_NAMESPACE}
+      
+      # Orchestrator configuration
+      - ORCHESTRATOR_URL=${ORCHESTRATOR_URL}
+      - ORCHESTRATOR_API_KEY=${ORCHESTRATOR_API_KEY}
+      
+      # Logging
+      - LOG_LEVEL=info
+    depends_on:
+      - redis
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - perceptus-network
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    networks:
+      - perceptus-network
+    command: redis-server --appendonly yes
+
+volumes:
+  redis_data:
+
+networks:
+  perceptus-network:
+    driver: bridge 
