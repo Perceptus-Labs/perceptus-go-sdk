@@ -10,7 +10,7 @@ import (
 
 	"github.com/Perceptus-Labs/perceptus-go-sdk/models"
 	"github.com/Perceptus-Labs/perceptus-go-sdk/utils"
-	"github.com/pinecone-io/go-pinecone/pinecone"
+	"github.com/pinecone-io/go-pinecone/v4/pinecone"
 	"go.uber.org/zap"
 )
 
@@ -102,80 +102,19 @@ func (h *IntentionHandler) analyzeIntention(transcript string) {
 	}
 
 	// Send result via websocket (if needed)
-	// h.session.sendWebSocketMessage("intention_analysis", result)
+	h.session.sendWebSocketMessage("intention_analysis", result)
 }
 
 func (h *IntentionHandler) getRelevantEnvironmentContext(ctx context.Context, transcript string) ([]string, error) {
 	if h.pineconeIdx == nil {
 		return []string{}, nil
 	}
-
-	// Create embedding for the transcript
-	embedding, err := utils.VectorizePrompt("text-embedding-ada-002", ctx, transcript)
+	queryResponse, err := utils.FetchResponseFromPinecone(ctx, h.pineconeIdx, transcript)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create embedding: %w", err)
+		return nil, fmt.Errorf("failed to fetch response from Pinecone: %w", err)
 	}
 
-	// Query Pinecone for similar environment contexts
-	queryRequest := &pinecone.QueryByVectorValuesRequest{
-		Vector:          embedding,
-		TopK:            uint32(5),
-		IncludeValues:   false,
-		IncludeMetadata: true,
-	}
-
-	queryResponse, err := h.pineconeIdx.QueryByVectorValues(ctx, queryRequest)
-	if err != nil {
-		return nil, fmt.Errorf("failed to query Pinecone: %w", err)
-	}
-
-	var contexts []string
-	for _, match := range queryResponse.Matches {
-		if match.Vector != nil && match.Vector.Metadata != nil {
-			if text, err := h.extractAvailablePineconeFields(match.Vector.Metadata, "timestamp"); err == nil {
-				if text != "" {
-					contexts = append(contexts, fmt.Sprintf("Context Timestamp: %s", text))
-				}
-			}
-			if text, err := h.extractAvailablePineconeFields(match.Vector.Metadata, "overview"); err == nil {
-				if text != "" {
-					contexts = append(contexts, text)
-				}
-			}
-			if text, err := h.extractAvailablePineconeFields(match.Vector.Metadata, "key_elements"); err == nil {
-				if text != "" {
-					contexts = append(contexts, text)
-				}
-			}
-			if text, err := h.extractAvailablePineconeFields(match.Vector.Metadata, "layout"); err == nil {
-				if text != "" {
-					contexts = append(contexts, text)
-				}
-			}
-			if text, err := h.extractAvailablePineconeFields(match.Vector.Metadata, "activities"); err == nil {
-				if text != "" {
-					contexts = append(contexts, text)
-				}
-			}
-			if text, err := h.extractAvailablePineconeFields(match.Vector.Metadata, "additional_info"); err == nil {
-				if text != "" {
-					contexts = append(contexts, text)
-				}
-			}
-		}
-	}
-
-	return contexts, nil
-}
-
-func (h *IntentionHandler) extractAvailablePineconeFields(metadata *pinecone.Metadata, field string) (string, error) {
-	text := ""
-	if value, ok := metadata.Fields[field]; ok {
-		text = value.GetStringValue()
-	} else {
-		return "", fmt.Errorf("field not found in Pinecone metadata: %s", field)
-	}
-	return text, nil
+	return queryResponse, nil
 }
 
 func (h *IntentionHandler) notifyOrchestrator(result models.IntentionResult) {

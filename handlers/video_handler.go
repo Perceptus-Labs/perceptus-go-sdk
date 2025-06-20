@@ -9,7 +9,7 @@ import (
 
 	"github.com/Perceptus-Labs/perceptus-go-sdk/models"
 	"github.com/Perceptus-Labs/perceptus-go-sdk/utils"
-	"github.com/pinecone-io/go-pinecone/pinecone"
+	"github.com/pinecone-io/go-pinecone/v4/pinecone"
 	"go.uber.org/zap"
 )
 
@@ -109,15 +109,8 @@ func (h *VideoHandler) storeEnvironmentContext(envContext models.EnvironmentCont
 
 	h.session.Logger.Debug("Storing environment context in Pinecone")
 
-	// Create embeddings for each object and the description by converting the environment context to a string
+	// Convert the environment context to a string for storage
 	allTexts := fmt.Sprintf("%s", envContext)
-
-	// Create embedding for the entire environment context
-	embedding, err := utils.VectorizePrompt("text-embedding-ada-002", ctx, allTexts)
-	if err != nil {
-		h.session.Logger.Error("Failed to create embedding", zap.Error(err), zap.String("text", allTexts))
-		return
-	}
 
 	// Create vector ID
 	vectorID := fmt.Sprintf("%s-env", envContext.ID)
@@ -135,8 +128,8 @@ func (h *VideoHandler) storeEnvironmentContext(envContext models.EnvironmentCont
 		"type":            "environment_context",
 	}
 
-	// Use the utility function to upsert to Pinecone
-	err = utils.UpsertToPinecone(ctx, h.pineconeIdx, vectorID, embedding, metadata)
+	// Use the utility function to upsert to Pinecone (now with integrated embeddings)
+	err := utils.UpsertToPinecone(ctx, h.pineconeIdx, vectorID, allTexts, metadata)
 	if err != nil {
 		h.session.Logger.Error("Failed to upsert to Pinecone", zap.Error(err), zap.String("vector_id", vectorID))
 	}
