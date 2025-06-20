@@ -142,12 +142,12 @@ func (h *IntentionHandler) notifyOrchestrator(result models.IntentionResult) {
 		h.session.Logger.Error("Failed to marshal payload", zap.Error(err))
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 	orchestratorEndpoint := os.Getenv("ORCHESTRATOR_URL")
 	apiKey := os.Getenv("ORCHESTRATOR_API_KEY")
-	client := &http.Client{Timeout: 10 * time.Second}
-	req, err := http.NewRequestWithContext(ctx, "POST", orchestratorEndpoint,
+	client := &http.Client{Timeout: 10 * time.Minute}
+	req, err := http.NewRequestWithContext(ctx, "POST", orchestratorEndpoint+"/orchestrate",
 		bytes.NewBuffer(jsonData))
 	if err != nil {
 		h.session.Logger.Error("Failed to create orchestrator request", zap.Error(err))
