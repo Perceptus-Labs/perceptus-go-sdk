@@ -36,7 +36,6 @@ func InitIntentionHandler(session *RoboSession) *IntentionHandler {
 	pineconeIdx, err := utils.GetPineconeIndex(&session.ID)
 	if err != nil {
 		session.Logger.Warn("Failed to initialize Pinecone connection", zap.Error(err))
-		// Continue without Pinecone - we'll still do intention analysis
 	}
 
 	intentionHandler := &IntentionHandler{
