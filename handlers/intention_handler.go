@@ -89,7 +89,6 @@ func (h *IntentionHandler) analyzeIntention(transcript string) {
 		Timestamp:          time.Now(),
 	}
 
-	// Log the intention result
 	if hasIntention {
 		h.session.Logger.Info("Intention detected",
 			zap.String("type", intentionType),
@@ -101,12 +100,10 @@ func (h *IntentionHandler) analyzeIntention(transcript string) {
 			zap.Float64("confidence", confidence))
 	}
 
-	// If clear intention detected, make API call to orchestrator
 	if hasIntention && confidence > 0.7 {
 		go h.notifyOrchestrator(result)
 	}
 
-	// Send result via websocket (if needed)
 	h.session.sendWebSocketMessage("intention_analysis", result)
 }
 
@@ -139,8 +136,6 @@ func (h *IntentionHandler) notifyOrchestrator(result models.IntentionResult) {
 	}
 
 	// Make API call to orchestrator
-	// This would be implemented based on your orchestrator's API
-	// For now, we'll just log it
 	h.session.Logger.Info("Orchestrator notification payload", zap.Any("payload", payload))
 
 	jsonData, err := json.Marshal(payload)
