@@ -3,13 +3,10 @@
 package handlers
 
 import (
-	"bytes"
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
@@ -352,68 +349,6 @@ func (rs *RoboSession) sendWebSocketMessage(msgType string, data interface{}) {
 	if err := rs.Connection.WriteJSON(msg); err != nil {
 		rs.Logger.Error("failed to send ws message",
 			zap.String("type", msgType), zap.Error(err))
-	}
-}
-
-func triggerOrchestrator(rs *RoboSession, intention models.IntentionResult) {
-	rs.Logger.Info("Triggering orchestrator", zap.Any("intention", intention))
-	orchestratorEndpoint := os.Getenv("ORCHESTRATOR_ENDPOINT")
-	apiKey := os.Getenv("ORCHESTRATOR_API_KEY")
-
-	if orchestratorEndpoint == "" || apiKey == "" {
-		rs.Logger.Error("Orchestrator endpoint or API key not configured")
-		return
-	}
-
-	// Create a new context with timeout for this specific operation
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	// Prepare the payload
-	payload := map[string]interface{}{
-		"session_id":          rs.ID,
-		"intention":           intention,
-		"environment_context": intention.EnvironmentContext,
-		"timestamp":           time.Now(),
-	}
-
-	payloadBytes, err := json.Marshal(payload)
-	if err != nil {
-		rs.Logger.Error("Failed to marshal orchestrator payload", zap.Error(err))
-		return
-	}
-
-	// Make the API call
-	client := &http.Client{Timeout: 10 * time.Second}
-	req, err := http.NewRequestWithContext(ctx, "POST", orchestratorEndpoint,
-		bytes.NewBuffer(payloadBytes))
-	if err != nil {
-		rs.Logger.Error("Failed to create orchestrator request", zap.Error(err))
-		return
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+apiKey)
-
-	resp, err := client.Do(req)
-	if err != nil {
-		rs.Logger.Error("Failed to call orchestrator", zap.Error(err))
-		return
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusOK {
-		rs.Logger.Info("Successfully triggered orchestrator")
-		rs.LastActionTime = time.Now()
-
-		// Notify client of successful orchestrator trigger
-		// session.sendWebSocketMessage("orchestrator_triggered", map[string]interface{}{
-		// 	"session_id": session.ID,
-		// 	"intention":  intention.Description,
-		// 	"timestamp":  time.Now(),
-		// })
-	} else {
-		rs.Logger.Error("Orchestrator returned error status", zap.Int("status", resp.StatusCode))
 	}
 }
 

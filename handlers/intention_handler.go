@@ -101,7 +101,7 @@ func (h *IntentionHandler) analyzeIntention(transcript string) {
 	}
 
 	if hasIntention && confidence > 0.7 {
-		go h.notifyOrchestrator(result)
+		h.notifyOrchestrator(result)
 	}
 
 	h.session.sendWebSocketMessage("intention_analysis", result)
@@ -143,9 +143,24 @@ func (h *IntentionHandler) notifyOrchestrator(result models.IntentionResult) {
 		h.session.Logger.Error("Failed to marshal payload", zap.Error(err))
 		return
 	}
-	resp, err := http.Post(os.Getenv("ORCHESTRATOR_URL"), "application/json", bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	orchestratorEndpoint := os.Getenv("ORCHESTRATOR_URL")
+	apiKey := os.Getenv("ORCHESTRATOR_API_KEY")
+	client := &http.Client{Timeout: 10 * time.Second}
+	req, err := http.NewRequestWithContext(ctx, "POST", orchestratorEndpoint,
+		bytes.NewBuffer(jsonData))
 	if err != nil {
-		h.session.Logger.Error("Failed to make API call to orchestrator", zap.Error(err))
+		h.session.Logger.Error("Failed to create orchestrator request", zap.Error(err))
+		return
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		h.session.Logger.Error("Failed to call orchestrator", zap.Error(err))
 		return
 	}
 	defer resp.Body.Close()
