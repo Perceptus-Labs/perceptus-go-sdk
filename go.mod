@@ -9,7 +9,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/lpernett/godotenv v0.0.0-20230527005122-0de1d4c5ef5e
-	github.com/pinecone-io/go-pinecone v1.1.1
+	github.com/pinecone-io/go-pinecone/v4 v4.0.1
 	github.com/redis/go-redis/v9 v9.10.0
 	go.uber.org/zap v1.27.0
 )
@@ -27,7 +27,6 @@ require (
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/oapi-codegen/runtime v1.1.1 // indirect
-	github.com/pinecone-io/go-pinecone/v4 v4.0.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/stretchr/testify v1.8.4 // indirect
 	go.uber.org/multierr v1.10.0 // indirect
