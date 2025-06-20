@@ -3,8 +3,13 @@
 package handlers
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -138,9 +143,25 @@ func (h *IntentionHandler) notifyOrchestrator(result models.IntentionResult) {
 	// For now, we'll just log it
 	h.session.Logger.Info("Orchestrator notification payload", zap.Any("payload", payload))
 
-	// TODO: Implement actual API call to orchestrator
-	// Example:
-	// resp, err := http.Post("http://orchestrator/api/intention", "application/json", bytes.NewBuffer(jsonData))
+	jsonData, err := json.Marshal(payload)
+	if err != nil {
+		h.session.Logger.Error("Failed to marshal payload", zap.Error(err))
+		return
+	}
+	resp, err := http.Post(os.Getenv("ORCHESTRATOR_URL"), "application/json", bytes.NewBuffer(jsonData))
+	if err != nil {
+		h.session.Logger.Error("Failed to make API call to orchestrator", zap.Error(err))
+		return
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		h.session.Logger.Error("Failed to read response body", zap.Error(err))
+		return
+	}
+
+	h.session.Logger.Info("Orchestrator response", zap.String("body", string(body)))
 }
 
 func (h *IntentionHandler) Close() {
