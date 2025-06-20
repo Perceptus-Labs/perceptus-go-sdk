@@ -176,7 +176,5 @@ func (h *IntentionHandler) ProcessTranscript(transcript string) {
 	}
 
 	h.session.Logger.Info("Processing transcript for intention analysis", zap.String("transcript", transcript))
-
-	// Analyze the intention directly
 	h.analyzeIntention(transcript)
 }
