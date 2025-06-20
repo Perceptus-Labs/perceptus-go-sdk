@@ -113,7 +113,7 @@ Be conservative - only mark as clear intention if the user is explicitly asking 
 func (c *OpenAIClient) AnalyzeImageContext(ctx context.Context, imageData string) (*models.EnvironmentContext, error) {
 	systemPrompt := `You are a vision-enabled assistant. Return ONLY a JSON object with key: overview (string), key_elements (array of strings), layout (string), activities (array of strings), additional_info (object of string pairs). No extra keys or prose.`
 
-	userPrompt := fmt.Sprintf("Analyze the scene depicted by the image below and output a structured JSON context description.")
+	userPrompt := "Analyze the scene depicted by the image below and output a structured JSON context description."
 
 	payload := map[string]interface{}{
 		"model": "gpt-4.1-nano-2025-04-14", // vision-enabled model
