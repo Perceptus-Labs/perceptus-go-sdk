@@ -1,4 +1,4 @@
-# ![PerceptusLabs Logo](https://github.com/Perceptus-Labs/Intentus/blob/main/public/logo.png?raw=true) Perceptus Go SDK - Persisted Multimodal Context Management
+# ![PerceptusLabs Logo](https://github.com/Perceptus-Labs/perceptus-go-sdk/blob/main/public/logo.png?raw=true) Perceptus Go SDK - Persisted Multimodal Context Management
 
 **Real-time perception SDK for robotic agents.**
 **Built by [PerceptusLabs](https://perceptuslabs.com)**
