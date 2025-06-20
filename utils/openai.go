@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -112,17 +111,10 @@ Be conservative - only mark as clear intention if the user is explicitly asking 
 
 // AnalyzeImageContext requests a detailed, structured, holistic context description.
 func (c *OpenAIClient) AnalyzeImageContext(ctx context.Context, imageData string) (*models.EnvironmentContext, error) {
-	// 1) Construct the data URI
-	log.Println("imageData", imageData)
-	dataURI := imageData
-
-	// 2) System prompt to enforce JSON-only output with desired fields
 	systemPrompt := `You are a vision-enabled assistant. Return ONLY a JSON object with key: overview (string), key_elements (array of strings), layout (string), activities (array of strings), additional_info (object of string pairs). No extra keys or prose.`
 
-	// 3) User message including the image URI
-	userPrompt := fmt.Sprintf("Analyze the scene depicted by the image below and output a structured JSON context description. IMAGE_URI:%s", dataURI)
+	userPrompt := fmt.Sprintf("Analyze the scene depicted by the image below and output a structured JSON context description.")
 
-	// 4) Build request body
 	payload := map[string]interface{}{
 		"model": "gpt-4.1-nano-2025-04-14", // vision-enabled model
 		"messages": []map[string]interface{}{
@@ -140,7 +132,7 @@ func (c *OpenAIClient) AnalyzeImageContext(ctx context.Context, imageData string
 					{
 						"type": "image_url",
 						"image_url": map[string]string{
-							"url": dataURI,
+							"url": imageData,
 						},
 					},
 				},
@@ -172,7 +164,6 @@ func (c *OpenAIClient) AnalyzeImageContext(ctx context.Context, imageData string
 		return nil, fmt.Errorf("OpenAI API error: %s", string(b))
 	}
 
-	// 5) Decode response
 	var raw struct {
 		Choices []struct {
 			Message struct {
@@ -193,7 +184,6 @@ func (c *OpenAIClient) AnalyzeImageContext(ctx context.Context, imageData string
 	clean = strings.TrimSuffix(clean, "```")
 	zap.L().Debug("OpenAI context JSON", zap.String("content", content))
 
-	// 6) Unmarshal into our struct
 	var ctxDesc models.EnvironmentContext
 	if err := json.Unmarshal([]byte(clean), &ctxDesc); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal context JSON: %w", err)
@@ -243,15 +233,12 @@ func (c *OpenAIClient) sendRequest(ctx context.Context, requestBody map[string]i
 	content := response.Choices[0].Message.Content
 	zap.L().Debug("OpenAI response content", zap.String("content", content))
 
-	// Try to parse as JSON first
 	var intentionResult models.IntentionResult
 	if err := json.Unmarshal([]byte(content), &intentionResult); err != nil {
-		// If JSON parsing fails, create a default result with the raw content
 		zap.L().Warn("Failed to parse OpenAI response as JSON, using raw content",
 			zap.Error(err),
 			zap.String("content", content))
 
-		// Create a default intention result with the raw content
 		intentionResult = models.IntentionResult{
 			HasClearIntention:  intentionResult.HasClearIntention,
 			IntentionType:      intentionResult.IntentionType,

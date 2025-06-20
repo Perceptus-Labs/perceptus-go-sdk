@@ -8,7 +8,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -429,9 +428,6 @@ func (rs *RoboSession) handleVideoData(msg WebSocketMessage) {
 	if !strings.HasPrefix(b64, "data:image") {
 		b64 = "data:image/jpeg;base64," + b64
 	}
-
-	log.Println("b64", b64)
-
 	// 1) echo back so the <img id="videoPreview"> renders it
 	rs.sendWebSocketMessage("video_frame", map[string]string{
 		"image_b64": b64,
